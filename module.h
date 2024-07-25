@@ -92,15 +92,13 @@ PYBIND11_MODULE(tplbackend, m) {
                 Returns:
                     str: The base name of the template.
              )pbdoc")
-        .def("content", &TplProject::content, 
+        .def("text", &TplProject::text, 
              pybind11::arg("index"),
              R"pbdoc(
-                Retrieves the raw content of the template at the given index as a string.
+                Retrieves the raw text of the template at the given index as a string.
                 Args:
-                    index (int): The index of the template to retrieve the content for.
+                    index (int): The index of the template to retrieve the text for.
                 Returns:
-                    str: The raw content of the template.
+                    str: The raw text of the template.
              )pbdoc");
-
-    // m.attr("dependencies") = pybind11::none();  // Placeholder for any future dependencies
 }

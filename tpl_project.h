@@ -106,23 +106,19 @@ public:
         uint64_t index = abs_index(handler_index);
         auto file_handler = id_to_handler[index];
         std::thread t([=]() {
-            if (!std::filesystem::exists(filesystem_output_directory_path)) {
+            if (!std::filesystem::exists(filesystem_output_directory_path))
                 std::filesystem::create_directories(filesystem_output_directory_path);
-            }
             file_handler->render(); 
         });
         t.detach();
     }
 
     void render(){
-
         std::thread t([=]() {
-            if (!std::filesystem::exists(filesystem_output_directory_path)) {
+            if (!std::filesystem::exists(filesystem_output_directory_path))
                 std::filesystem::create_directories(filesystem_output_directory_path);
-            }
-            for (auto file_handler : file_handlers){
+            for (auto file_handler : file_handlers)
                 file_handler->render();
-            }
         });
         t.detach();
     }
@@ -173,11 +169,15 @@ public:
         return id_to_handler[index]->file_name;
     }
 
-    std::string content(int64_t index_) {
+    std::string text(int64_t index_) {
         uint64_t index = abs_index(index_);
         std::scoped_lock<std::mutex> lock(id_to_handler[index]->my_mutex);
         return std::string(id_to_handler[index]->file_content);
     }
+
+public:
+
+    
 
 };
 
