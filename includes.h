@@ -40,7 +40,6 @@ using namespace std::chrono_literals;
 
 #include "encoding.h"
 #include "python_executor.h"
-#include "shared_ptr_set.h"
 #include "dataframe.h"
 #include "file_handler.h"
 #include "tpl_project.h"

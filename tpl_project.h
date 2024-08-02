@@ -5,6 +5,12 @@ struct TplProject{
     TplProject(const std::string& directory_path_){
         python_executor = new PythonExecutor();
         set_directory(directory_path_);
+
+
+        DataFrame df;
+
+
+
     }
     ~TplProject(){
         for (auto file_handler : file_handlers)
@@ -177,7 +183,95 @@ public:
 
 public:
 
-    
+    void clear_dataframe(int64_t index_) {
+        uint64_t index = abs_index(index_);
+        std::scoped_lock<std::mutex> lock(id_to_handler[index]->my_mutex);
+        id_to_handler[index]->clear_dataframe();
+    }
+
+    void insert_column(int64_t index_, const std::string& col){
+        uint64_t index = abs_index(index_);
+        std::scoped_lock<std::mutex> lock(id_to_handler[index]->my_mutex);
+        id_to_handler[index]->insert_column(col);
+    }
+
+    void insert_row(int64_t index_) {
+        uint64_t index = abs_index(index_);
+        std::scoped_lock<std::mutex> lock(id_to_handler[index]->my_mutex);
+        id_to_handler[index]->insert_row();
+    }
+
+    void insert_row(int64_t index_, int64_t row) {
+        uint64_t index = abs_index(index_);
+        std::scoped_lock<std::mutex> lock(id_to_handler[index]->my_mutex);
+        id_to_handler[index]->insert_row(row);
+    }
+
+    void remove_column(int64_t index_, const std::string& col) {
+        uint64_t index = abs_index(index_);
+        std::scoped_lock<std::mutex> lock(id_to_handler[index]->my_mutex);
+        id_to_handler[index]->remove_column(col);
+    }
+
+    void remove_column(int64_t index_, int64_t col) {
+        uint64_t index = abs_index(index_);
+        std::scoped_lock<std::mutex> lock(id_to_handler[index]->my_mutex);
+        id_to_handler[index]->remove_column(col);
+    }
+
+    void remove_row(int64_t index_, int64_t row) {
+        uint64_t index = abs_index(index_);
+        std::scoped_lock<std::mutex> lock(id_to_handler[index]->my_mutex);
+        id_to_handler[index]->remove_row(row);
+    }
+
+    void set(int64_t index_, std::tuple<int64_t, std::string> pos, const std::string& val) {
+        uint64_t index = abs_index(index_);
+        std::scoped_lock<std::mutex> lock(id_to_handler[index]->my_mutex);
+        id_to_handler[index]->set(pos, val);
+    }
+
+    void set(int64_t index_, std::tuple<int64_t, int64_t> pos, const std::string& val) {
+        uint64_t index = abs_index(index_);
+        std::scoped_lock<std::mutex> lock(id_to_handler[index]->my_mutex);
+        id_to_handler[index]->set(pos, val);
+    }
+
+    std::string get(int64_t index_, const std::tuple<int64_t, std::string>& pos) {
+        uint64_t index = abs_index(index_);
+        std::scoped_lock<std::mutex> lock(id_to_handler[index]->my_mutex);
+        return id_to_handler[index]->get(pos);
+    }
+
+    std::string get(int64_t index_, const std::tuple<int64_t, int64_t>& pos) {
+        uint64_t index = abs_index(index_);
+        std::scoped_lock<std::mutex> lock(id_to_handler[index]->my_mutex);
+        return id_to_handler[index]->get(pos);
+    }
+
+    uint64_t dataframe_row_count(int64_t index_) {
+        uint64_t index = abs_index(index_);
+        std::scoped_lock<std::mutex> lock(id_to_handler[index]->my_mutex);
+        return id_to_handler[index]->dataframe_row_count();
+    }
+
+    uint64_t dataframe_col_count(int64_t index_) {
+        uint64_t index = abs_index(index_);
+        std::scoped_lock<std::mutex> lock(id_to_handler[index]->my_mutex);
+        return id_to_handler[index]->dataframe_col_count();
+    }
+
+    std::tuple<int64_t, int64_t> dataframe_size(int64_t index_) {
+        uint64_t index = abs_index(index_);
+        std::scoped_lock<std::mutex> lock(id_to_handler[index]->my_mutex);
+        return id_to_handler[index]->dataframe_size();
+    }
+
+    void print_dataframe(int64_t index_) {
+        uint64_t index = abs_index(index_);
+        std::scoped_lock<std::mutex> lock(id_to_handler[index]->my_mutex);
+        id_to_handler[index]->print_dataframe();
+    }
 
 };
 

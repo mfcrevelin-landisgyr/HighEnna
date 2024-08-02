@@ -100,5 +100,129 @@ PYBIND11_MODULE(tplbackend, m) {
                     index (int): The index of the template to retrieve the text for.
                 Returns:
                     str: The raw text of the template.
+             )pbdoc")
+        .def("clear_dataframe", &TplProject::clear_dataframe,
+             pybind11::arg("index"),
+             R"pbdoc(
+                Clears all data in the dataframe for the template at the given index.
+                Args:
+                    index (int): The index of the template.
+             )pbdoc")
+        .def("insert_column", &TplProject::insert_column,
+             pybind11::arg("index"), pybind11::arg("col"),
+             R"pbdoc(
+                Inserts a new column into the dataframe for the template at the given index.
+                Args:
+                    index (int): The index of the template.
+                    col (str): The name of the new column.
+             )pbdoc")
+        .def("insert_row", pybind11::overload_cast<int64_t>(&TplProject::insert_row),
+             pybind11::arg("index"),
+             R"pbdoc(
+                Inserts a new row into the dataframe for the template at the given index.
+                Args:
+                    index (int): The index of the template.
+             )pbdoc")
+        .def("insert_row", pybind11::overload_cast<int64_t, int64_t>(&TplProject::insert_row),
+             pybind11::arg("index"), pybind11::arg("row"),
+             R"pbdoc(
+                Inserts a new row at the specified position into the dataframe for the template at the given index.
+                Args:
+                    index (int): The index of the template.
+                    row (int): The position where the new row will be inserted.
+             )pbdoc")
+        .def("remove_column", pybind11::overload_cast<int64_t, const std::string&>(&TplProject::remove_column),
+             pybind11::arg("index"), pybind11::arg("col"),
+             R"pbdoc(
+                Removes a column from the dataframe for the template at the given index.
+                Args:
+                    index (int): The index of the template.
+                    col (str): The name of the column to remove.
+             )pbdoc")
+        .def("remove_column", pybind11::overload_cast<int64_t, int64_t>(&TplProject::remove_column),
+             pybind11::arg("index"), pybind11::arg("col"),
+             R"pbdoc(
+                Removes a column at the specified position from the dataframe for the template at the given index.
+                Args:
+                    index (int): The index of the template.
+                    col (int): The position of the column to remove.
+             )pbdoc")
+        .def("remove_row", &TplProject::remove_row,
+             pybind11::arg("index"), pybind11::arg("row"),
+             R"pbdoc(
+                Removes a row from the dataframe for the template at the given index.
+                Args:
+                    index (int): The index of the template.
+                    row (int): The position of the row to remove.
+             )pbdoc")
+        .def("dataframe_set", pybind11::overload_cast<int64_t, std::tuple<int64_t, std::string>, const std::string&>(&TplProject::set),
+             pybind11::arg("index"), pybind11::arg("pos"), pybind11::arg("val"),
+             R"pbdoc(
+                Sets a value in the dataframe for the template at the given index and position.
+                Args:
+                    index (int): The index of the template.
+                    pos (Tuple[int, str]): The position in the dataframe (row, column name).
+                    val (str): The value to set.
+             )pbdoc")
+        .def("dataframe_set", pybind11::overload_cast<int64_t, std::tuple<int64_t, int64_t>, const std::string&>(&TplProject::set),
+             pybind11::arg("index"), pybind11::arg("pos"), pybind11::arg("val"),
+             R"pbdoc(
+                Sets a value in the dataframe for the template at the given index and position.
+                Args:
+                    index (int): The index of the template.
+                    pos (Tuple[int, int]): The position in the dataframe (row, column index).
+                    val (str): The value to set.
+             )pbdoc")
+        .def("dataframe_get", pybind11::overload_cast<int64_t, const std::tuple<int64_t, std::string>&>(&TplProject::get),
+             pybind11::arg("index"), pybind11::arg("pos"),
+             R"pbdoc(
+                Gets a value from the dataframe for the template at the given index and position.
+                Args:
+                    index (int): The index of the template.
+                    pos (Tuple[int, str]): The position in the dataframe (row, column name).
+                Returns:
+                    str: The value at the specified position.
+             )pbdoc")
+        .def("dataframe_get", pybind11::overload_cast<int64_t, const std::tuple<int64_t, int64_t>&>(&TplProject::get),
+             pybind11::arg("index"), pybind11::arg("pos"),
+             R"pbdoc(
+                Gets a value from the dataframe for the template at the given index and position.
+                Args:
+                    index (int): The index of the template.
+                    pos (Tuple[int, int]): The position in the dataframe (row, column index).
+                Returns:
+                    str: The value at the specified position.
+             )pbdoc")
+        .def("dataframe_row_count", &TplProject::dataframe_row_count, pybind11::arg("index"),
+             R"pbdoc(
+                Gets the number of rows in the dataframe for the template at the given index.
+                Args:
+                    index (int): The index of the template.
+                Returns:
+                    int: The number of rows in the dataframe.
+             )pbdoc")
+        .def("dataframe_col_count", &TplProject::dataframe_col_count, pybind11::arg("index"),
+             R"pbdoc(
+                Gets the number of columns in the dataframe for the template at the given index.
+                Args:
+                    index (int): The index of the template.
+                Returns:
+                    int: The number of columns in the dataframe.
+             )pbdoc")
+        .def("dataframe_size", &TplProject::dataframe_size, pybind11::arg("index"),
+             R"pbdoc(
+                Gets the size (number of rows and columns) of the dataframe for the template at the given index.
+                Args:
+                    index (int): The index of the template.
+                Returns:
+                    Tuple[int, int]: The size of the dataframe (number of rows, number of columns).
+             )pbdoc")
+        .def("print_dataframe", &TplProject::print_dataframe, 
+             pybind11::arg("index"),
+             R"pbdoc(
+                Prints the dataframe for the template at the given index.
+                Args:
+                    index (int): The index of the template to print the dataframe for.
              )pbdoc");
+
 }
