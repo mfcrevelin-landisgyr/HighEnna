@@ -6,7 +6,12 @@ using OutFilesErrMsgMap = std::unordered_map<uint64_t, std::ostringstream>;
 struct TplFileHandler {
     TplFileHandler(const std::string& file_output_dir_, const std::string& file_path_, const std::string& file_name_, PythonExecutor* python_executor_):
         file_output_dir(file_output_dir_), file_path(file_path_), file_name(file_name_), python_executor(python_executor_) {}
-    
+    ~TplFileHandler(){
+        while (!file_template.empty()){
+            delete file_template.top();
+            file_template.pop();
+        }
+    }
 public:
 
     std::string file_path;
@@ -261,9 +266,11 @@ public:
     };
 
     struct For : Generator {
-        For(const char* ptr, uint64_t count, int64_t beg_, int64_t end_, int64_t stp_, std::stack<std::vector<Generator*>*>& template_stk): buffer(ptr,count), beg(beg_), end(end_), stp(stp_) {template_stk.push(&inner_template);}
+        For(const char* ptr, uint64_t count, int64_t beg_, int64_t end_, int64_t stp_, std::stack<std::vector<Generator*>*>& template_stk): 
+            buffer(ptr,count), beg(beg_), end(end_), stp(stp_) {
+                template_stk.push(&inner_template);
+            }
         void write(const OutFilesMap& out_files, OutFilesErrMsgMap& out_files_err_msgs, const DataFrame& dataframe,PythonExecutor* python_executor) const override {
-            
             std::string var(buffer);
             for (int64_t var_val=beg; var_val<end; var_val+=stp){
                 python_executor->execute(var+"="+std::to_string(var_val));
@@ -302,131 +309,379 @@ public:
         //           {22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22},
         //           { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,23,23,23,23,23,23,23,23,23,23, 1, 1, 1, 1, 1, 1, 1,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23, 1, 1, 1, 1,23, 1,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}};
 
-        // const char* file_content_beg = file_content_buffer.get();
+        const char* file_content_beg = file_content_buffer.get();
 
         uint64_t ptr = 0;
         uint16_t transition = 0;
-        uint8_t& state = *reinterpret_cast<uint8_t*>(&transition); // Least significant byte
+        uint8_t& state  = *(reinterpret_cast<uint8_t*>(&transition) + 0); // Least significant byte
         uint8_t& pstate = *(reinterpret_cast<uint8_t*>(&transition) + 1); // Most significant byte
         
-        uint64_t l_ptr = 0;
+        std::stack<uint64_t> ptr_stk;
+        ptr_stk.push(0);
+
         uint64_t id_ptr = 0;
+
         uint64_t line_num = 0;
         uint64_t line_count = 0;
 
-        uint64_t num = 0;
-        uint64_t pre = 0;
-        uint64_t post = 1;
+        uint64_t a,b,c;
+        std::string_view s;
 
         uint64_t var_str = 0;
         uint64_t var_end = 0;
         uint64_t count_start = 0;
         uint64_t count_end = 0;
 
+        uint64_t beg,end;
+
 
         std::stack<std::vector<Generator*>*> template_stk;
         template_stk.push(&file_template) ;
 
-        std::array<std::function<void()>,5> actions = {
-            [&](){
+        std::unordered_map<std::string,std::function<void()>> actions = {
+            {"new_line",[&](){
                 ++line_count;
                 file_line_indexes.push_back(ptr + 1);
-                pre=0;
-                post=1;
-            },
-            [&](){
-                l_ptr = ptr;
-            },
-            [&](){
-                id_ptr = ptr;
-            },
-            [&](){
-                // Deserialise
-            },
-            [&](){
-                template_stk.top()->push(new PlainText(file_content_buffer+l_ptr,ptr-l_ptr));
-            },
-            [&](){
-                template_stk.top()->push(new Expression(file_content_buffer+l_ptr,ptr-l_ptr));
-            },
-            [&](){
-                template_stk.top()->push(new Line(pre,post));
-            },
-            [&](){
-                template_stk.top()->push(new LineSet(pre,post));
-            },
-            [&](){
-                pre = std::stoi(std::string_view(file_content_buffer+l_ptr,ptr-l_ptr));
-            },
-            [&](){
-                post = std::stoi(std::string_view(file_content_buffer+l_ptr,ptr-l_ptr));
-            },
-            [&](){
-                file_variables.emplace(file_content_beg + id_ptr, ptr - id_ptr);
-            },
-            [&](){
-                log("Error: Invalid variable declaration",line_num,ptr - file_line_indexes[line_num], ptr - file_line_indexes[line_num] - 4);
+                ptr_stk.push(ptr);
+            }},
+            {"push_next",[&](){
+                ptr_stk.push(ptr+1);
+            }},
+            {"push",[&](){
+                ptr_stk.push(ptr);
+            }},
+            {"pop",[&](){
+                ptr_stk.pop(ptr);
+            }},
+            {"PlainText",[&](){
+                template_stk.top()->push(new PlainText(s));
+            }},
+            {"Expression",[&](){
+                template_stk.top()->push(new Expression(string_view));
+            }},
+            {"Line",[&](){
+                template_stk.top()->push(new Line(a,b));
+            }},
+            {"LineSet",[&](){
+                template_stk.top()->push(new LineSet(a));
+            }},
+            {"For",[&](){
+                template_stk.top()->push(new For(s,a,b,c,template_stk));
+            }},
+            {"variable",[&](){
+                file_variables.emplace(string_view);
+            }},
+            {"fetch",[&](){
+                end = ptr_stk.top();
+                ptr_stk.pop()
+
+                beg = ptr_stk.top();
+                ptr_stk.pop()
+            }},
+            {"reset",[&](){
+                a = 0;
+                b = 1;
+                c = 1;
+            }},
+            {"a++",[&](){
+                a = 1;
+                ptr_stk.pop()
+            }},
+            {"a--",[&](){
+                a = -1;
+                ptr_stk.pop()
+            }},
+            {"b++",[&](){
+                b = 1;
+                ptr_stk.pop()
+            }},
+            {"b--",[&](){
+                b = -1;
+                ptr_stk.pop()
+            }},
+            {"a",[&](){
+                a = std::stoi(std::string_view(file_content_buffer+beg,end-beg));
+            }},
+            {"b",[&](){
+                b = std::stoi(std::string_view(file_content_buffer+beg,end-beg));
+            }},
+            {"c",[&](){
+                c = std::stoi(std::string_view(file_content_buffer+beg,end-beg));
+            }},
+            {"s",[&](){
+                s = {file_content_buffer+beg,end-beg};
+            }},
+            {"invalid_identifier",[&](){
+                log("Error: Invalid identifier.",line_num,ptr - file_line_indexes[line_num], ptr - file_line_indexes[line_num] - 4);
                 failed = true;
-            },
-            [&](){
-                log("Error: Invalid number literal",line_num,ptr - file_line_indexes[line_num], ptr - file_line_indexes[line_num] - 4);
+            }},
+            {"invalid_number",[&](){
+                beg = ptr_stk.top();
+
+                log("Error: Invalid number literal.",line_num,ptr - file_line_indexes[line_num], beg - file_line_indexes[line_num]);
                 failed = true;
-            },
-            [&](){
-                log("Error: Invalid data byte",line_num,ptr - file_line_indexes[line_num], ptr - file_line_indexes[line_num] - 4);
+            }},
+            {"invalid_data",[&](){
+                log("Error: Invalid data byte.",line_num,ptr - file_line_indexes[line_num], ptr - file_line_indexes[line_num] - 4);
                 failed = true;
-            }
+            }},
+            {"invalid_syntax",[&](){
+                log("Error: Invalid syntax.",line_num,ptr - file_line_indexes[line_num]);
+                failed = true;
+            }},
+            {"invalid_syntax_f",[&](){
+                beg = ptr_stk.top();
+                log("Error: Invalid syntax.",line_num,ptr - file_line_indexes[line_num], beg - file_line_indexes[line_num]);
+                failed = true;
+            }},
+            {"close",[&](){
+                if(template_stk.size()>1)
+                    template_stk.pop();
+                else{
+                    beg = ptr_stk.top();
+                    log("Error: No opened loops to close.",line_num,ptr - file_line_indexes[line_num],beg - file_line_indexes[line_num]);
+                    failed = true;
+                }
+            }},
+            {"open_expression",[&](){
+                log("Error: Line break inside expression.",line_num,ptr - file_line_indexes[line_num]);
+                failed = true;
+            }},
+            {"open_for",[&](){
+                beg = ptr_stk.top();
+                log("Error: Incomplete FOR declaration.",line_num,ptr - file_line_indexes[line_num], beg - file_line_indexes[line_num]);
+                failed = true;
+            }},
         };
 
-        // std::unordered_map<uint16_t, std::vector<uint8_t>> transition_to_actions;
-        // for (state=0;state<24;++state){
-        //   for (pstate=0;pstate<24;++pstate){
-        //   transition_to_actions[transition] = {}; // Default : Null action
-        //   }
-        // }
+        // void log(const std::string& message, int64_t line_num = -1, int64_t at = -1, int64_t from = -1) {
 
-        // transition = 0;
+        std::unordered_map<uint16_t, std::vector<uint8_t>> transition_to_actions;
 
-        // transition_to_actions[0x0005] = {};
-        // transition_to_actions[0x071E] = {};
-        // transition_to_actions[0x072B] = {};
-        // transition_to_actions[0x0E2B] = {};
-        // transition_to_actions[0x0F2B] = {};
-        // transition_to_actions[0x102B] = {};
-        // transition_to_actions[0x122B] = {};
-        // transition_to_actions[0x112A] = {};
+        state = 0;
+        for (pstate=0;pstate<24;++pstate){
+            transition_to_actions[transition] = {0}; // Default : Null action
+        }
+        for (state=1;state<24;++state){
+            for (pstate=0;pstate<24;++pstate){
+                transition_to_actions[transition] = {}; // Default : Null action
+            }
+        }
+
+        transition = 0;
+
+        transition_to_actions[0x2600] = {3,0};
+        transition_to_actions[0x2605] = {3};
+        transition_to_actions[0x2700] = {3,0};
+        transition_to_actions[0x2705] = {3};
+        transition_to_actions[0x2800] = {3,0};
+        transition_to_actions[0x2805] = {3};
+
+        //
+
+        transition_to_actions[0x0501] = {2,10};
+        transition_to_actions[0x0100] = {3,0};
+        transition_to_actions[0x0105] = {3};
+
+        // Expression
+        transition_to_actions[0x3306] = {1};
+        transition_to_actions[0x3306] = {1};
+
+        transition_to_actions[0x022B] = {1};
+        transition_to_actions[0x332A] = {1};
+        transition_to_actions[0x332B] = {1};
+        transition_to_actions[0x2A2B] = {2};
+
+        //
+
+        transition_to_actions[0x0016] = {"push","reset"};
+        transition_to_actions[0x1600] = {"pop","new_line"};
+        transition_to_actions[0x1605] = {"pop"};
+
+        //Line
+
+        transition_to_actions[0x1607] = {"pop","push"};
+        transition_to_actions[0x0107] = {"pop","push"};
+        transition_to_actions[0x1609] = {"pop","push"};
+        transition_to_actions[0x0109] = {"pop","push"};
+        transition_to_actions[0x160B] = {"pop","push"};
+        transition_to_actions[0x010B] = {"pop","push"};
+        transition_to_actions[0x010C] = {"pop","push"};
+
+        transition_to_actions[0x3E10] = {"push"};
+        transition_to_actions[0x0F10] = {"push"};
+        transition_to_actions[0x3E12] = {"push"};
+        transition_to_actions[0x0F12] = {"push"};
+        transition_to_actions[0x3E14] = {"push"};
+        transition_to_actions[0x0F14] = {"push"};
+
+        transition_to_actions[0x0708] = {"a--"};
+        transition_to_actions[0x090A] = {"a++"};
+        transition_to_actions[0x0B0C] = {"push","fetch","a"};
+        transition_to_actions[0x1011] = {"b--"};
+        transition_to_actions[0x1213] = {"b++"};
+
+        transition_to_actions[0x0F15] = {
+            "Line","fetch","PlainText"
+        };
+        transition_to_actions[0x1115] = {
+            "Line","fetch","PlainText"
+        };
+        transition_to_actions[0x1315] = {
+            "Line","fetch","PlainText"
+        };
+        transition_to_actions[0x1415] = {
+            "push","fetch","b",
+            "Line","fetch","PlainText"
+        };
+
+        transition_to_actions[0x0700] = {"pop","new_line"};
+        transition_to_actions[0x0701] = {"pop","push"};
+        transition_to_actions[0x0705] = {"pop"};
+
+        transition_to_actions[0x0800] = {"new_line"};
+        transition_to_actions[0x0801] = {"push"};
+
+        transition_to_actions[0x0900] = {"pop","new_line"};
+        transition_to_actions[0x0901] = {"pop","push"};
+        transition_to_actions[0x0905] = {"pop"};
+
+        transition_to_actions[0x0A00] = {"new_line"};
+        transition_to_actions[0x0A01] = {"push"};
+
+        transition_to_actions[0x0B00] = {"pop","new_line"};
+        transition_to_actions[0x0B01] = {"pop","push"};
+        transition_to_actions[0x0B05] = {"pop"};
+
+        transition_to_actions[0x0C00] = {"new_line"};
+        transition_to_actions[0x0C01] = {"push"};
+
+        transition_to_actions[0x0D00] = {"new_line"};
+        transition_to_actions[0x0D01] = {"push"};
+
+        transition_to_actions[0x0E00] = {"new_line"};
+        transition_to_actions[0x0E01] = {"push"};
+
+        transition_to_actions[0x0F00] = {"new_line"};
+        transition_to_actions[0x0F01] = {"push"};
+
+        transition_to_actions[0x1000] = {"pop","new_line"};
+        transition_to_actions[0x1001] = {"pop","push"};
+        transition_to_actions[0x1005] = {"pop"};
+
+        transition_to_actions[0x1100] = {"new_line"};
+        transition_to_actions[0x1101] = {"push"};
+
+        transition_to_actions[0x1200] = {"pop","new_line"};
+        transition_to_actions[0x1201] = {"pop","push"};
+        transition_to_actions[0x1205] = {"pop"};
+
+        transition_to_actions[0x1300] = {"new_line"};
+        transition_to_actions[0x1301] = {"push"};
+
+        transition_to_actions[0x1400] = {"pop","new_line"};
+        transition_to_actions[0x1405] = {"pop"};
+
+        transition_to_actions[0x1300] = {"new_line"};
+        transition_to_actions[0x1301] = {"push"};
+
+        // For
+
+        transition_to_actions[0x1A1B] = {"push"};
+        transition_to_actions[0x1B1C] = {"push"};
+
+        transition_to_actions[0x1C1D] = {"push"};
+        transition_to_actions[0x1C23] = {"push"};
+        transition_to_actions[0x1D1E] = {"push"};
+        transition_to_actions[0x1D00] = {
+            "push",
+            "fetch",
+            "b",
+            "fetch",
+            "s",
+            "For",
+            "pop",
+            "fetch",
+            "PlainText",
+            "new_line"
+        };
+
+        transition_to_actions[0x1E1F] = {"push"};
+        transition_to_actions[0x1E24] = {"push"};
+        transition_to_actions[0x1F20] = {"push"};
+        transition_to_actions[0x1F00] = {
+            "push",
+            "fetch","b",
+            "fetch","a",
+            "fetch","s",
+            "For","pop",
+            "fetch","PlainText",
+            "new_line"
+        };
+
+        transition_to_actions[0x2021] = {"push"};
+        transition_to_actions[0x2025] = {"push"};
+        transition_to_actions[0x2122] = {"push"};
+        transition_to_actions[0x2100] = {
+            "push",
+            "fetch","c",
+            "fetch","b",
+            "fetch","a",
+            "fetch","s",
+            "For","pop",
+            "fetch","PlainText",
+            "new_line"
+        };
 
 
-        // transition_to_actions[0x0102] = {};
-        // transition_to_actions[0x0513] = {};
-        // transition_to_actions[0x0213] = {};
-        // transition_to_actions[0x191A] = {};
+        transition_to_actions[0x1700] = {"pop","new_line"};
+        transition_to_actions[0x1705] = {"pop"};
+        transition_to_actions[0x1800] = {"pop","new_line"};
+        transition_to_actions[0x1805] = {"pop"};
+        transition_to_actions[0x1900] = {"pop","new_line"};
+        transition_to_actions[0x1905] = {"pop"};
 
-        // transition_to_actions[0x0201] = {};
-        // transition_to_actions[0x0301] = {};
-        // transition_to_actions[0x0401] = {};
-        // transition_to_actions[0x0501] = {};
-        // transition_to_actions[0x0601] = {};
 
-        // transition_to_actions[0x1314] = {};
-        // transition_to_actions[0x1A1B] = {};
+        transition_to_actions[0x1A3A] = {"open_for"};
+        transition_to_actions[0x1B3A] = {"pop","open_for"};
+        transition_to_actions[0x1C3A] = {"pop","pop","open_for"};
+
+        transition_to_actions[0x1A06] = {"invalid_syntax"};
+        transition_to_actions[0x1B06] = {"invalid_identifier"};
+
+        transition_to_actions[0x1C06] = {"invalid_syntax"};
+        transition_to_actions[0x1D06] = {"invalid_number"};
+        transition_to_actions[0x2306] = {"invalid_number"};
+        
+        transition_to_actions[0x1E06] = {"invalid_syntax"};
+        transition_to_actions[0x1F06] = {"invalid_number"};
+        transition_to_actions[0x2406] = {"invalid_number"};
+        
+        transition_to_actions[0x2006] = {"invalid_syntax"};
+        transition_to_actions[0x2106] = {"invalid_number"};
+        transition_to_actions[0x2506] = {"invalid_number"};
+
+        transition_to_actions[0x2206] = {"invalid_syntax"};
+
+        // End
+        transition_to_actions[0x2829] = {"close"};
+        transition_to_actions[0x2906] = {"invalid_syntax"};
 
 
         try{
-
             auto start = std::chrono::high_resolution_clock::now();
 
-            // for (ptr = 0; ptr < file_content_size;++ptr) {
-            //   const char& chr = file_content_buffer[ptr];
+            for (ptr = 0; ptr < file_content_size;++ptr) {
+                const char& chr = file_content_buffer[ptr];
 
-            //   pstate = state;
-            //   state = dfa[state][static_cast<uint8_t>(chr)];
+                pstate = state;
+                state = dfa[state][static_cast<uint8_t>(chr)];
 
-            //   for (const uint8_t& action : transition_to_actions[transition] )
-            //   actions[action]();
+                for (const auto& action : transition_to_actions[transition] )
+                    actions[action]();
 
-            //   if (failed) {return;   }
-            // }
+                if (failed) {return;   }
+            }
 
             auto end = std::chrono::high_resolution_clock::now();
             log_time("Successfully parsed file.",start,end);
