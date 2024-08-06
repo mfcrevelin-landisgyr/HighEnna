@@ -77,7 +77,7 @@ public:
             }
         }
 
-        std::this_thread::sleep_for(20ms);
+        std::this_thread::sleep_for(200ms);
     }
 
 public:

@@ -1,6 +1,7 @@
 #ifndef INCLUDES_HEADER
 #define INCLUDES_HEADER
 
+#include <initializer_list>
 #include <functional>
 #include <algorithm>
 
