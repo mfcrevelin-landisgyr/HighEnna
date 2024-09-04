@@ -4,7 +4,7 @@ Effective Date: Aug 28th, 2024
 
 1. Purpose
 
-    This license agreement (the "License") governs the use, modification, and distribution of the High Enna software project (the "Software") developed by Mateus Felipe Crevelin, employee of Landis+Gyr for internal use only. This License aims to restrict the Software's use, modification, and distribution solely to employees of Landis+Gyr, ensuring that it remains internal to the company.
+    This license agreement (the "License") governs the use, modification, and distribution of the High Enna software (the "Software"), developed by Mateus Felipe Crevelin, employee of Landis+Gyr, for internal use only. This License aims to restrict the Software's use, modification, and distribution solely to employees of Landis+Gyr, ensuring that it remains internal to the company.
 
 2. License Grant
 
