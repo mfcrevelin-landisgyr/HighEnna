@@ -34,6 +34,8 @@ public:
     uint64_t data_block_beg_index = 0;
     uint64_t data_block_end_index = 0;
 
+    std::atomic<bool> loaded = false;
+    
     bool load_failed = false;
     bool any_render_failed = false;
     std::list<std::string> log_list;
@@ -56,14 +58,13 @@ public:
 public:
 
     void update(){
+        loaded = false;
 
         std::scoped_lock<std::mutex> loading_lock(loading_mutex);
         {std::scoped_lock<std::mutex> rendering_lock(rendering_mutex);}
 
         std::filesystem::file_time_type this_write_time = std::filesystem::last_write_time(file_path);
-
         if (this_write_time==last_write_time) return;
-
         last_write_time = this_write_time;
 
         load_failed = false;
@@ -88,13 +89,15 @@ public:
 
         load(); 
         if (!load_failed) parse();
-        if (!load_failed){
+        if (!load_failed && !data_block){
             file_dataframe.serialize(serialized_json);
             serialized_json["import_modules"] = import_modules;
             serialized_json["import_from_modules"] = import_from_modules;
             serialized_json["import_file_modules"] = import_file_modules;
             dump();
         }
+        file_dataframe.filter_variables(file_variables);
+        loaded = true;
     }
 
     void split_name(){
@@ -247,7 +250,7 @@ public:
     };
 
     struct Expression : Generator {
-        Expression(const std::string_view& s):buffer(s){}
+        Expression(uint64_t line_num_, const std::string_view& s):line_num(line_num_), buffer(s){}
         void write(uint64_t script_index, std::unique_ptr<std::ofstream>& out_file, Cache& cache) const override {
             (*out_file) << cache.fetch(script_index);
         }
@@ -266,10 +269,11 @@ public:
             return false;
         }
         std::string_view buffer;
+        uint64_t line_num;
     };
 
     struct Line : Generator {
-        Line(int64_t pre_delta_, int64_t pos_delta_):pre_delta(pre_delta_),pos_delta(pos_delta_){}
+        Line(uint64_t line_num_, int64_t pre_delta_, int64_t pos_delta_):line_num(line_num_), pre_delta(pre_delta_),pos_delta(pos_delta_){}
         void write(uint64_t script_index, std::unique_ptr<std::ofstream>& out_file, Cache& cache) const override {
             (*out_file) << cache.fetch(script_index);
         }
@@ -284,10 +288,11 @@ public:
         };
         int64_t pre_delta,pos_delta;
         static uint64_t line;
+        uint64_t line_num;
     };
 
     struct LineSet : Generator {
-        LineSet(uint64_t num_): num(num_) {}
+        LineSet(uint64_t line_num_, uint64_t num_): line_num(line_num_), num(num_) {}
         void write(uint64_t script_index, std::unique_ptr<std::ofstream>& out_file, Cache& cache) const override {}
         bool precompute(uint64_t script_index, const DataFrame& dataframe, PythonExecutor* python_executor, Cache& cache) override {
             if (cache.error_messages.find(script_index)!=cache.error_messages.end()) return true;
@@ -297,11 +302,12 @@ public:
             return false;
         };
         uint64_t num;
+        uint64_t line_num;
     };
 
     struct For : Generator {
-        For(const std::string_view& s, int64_t beg_, int64_t end_, int64_t stp_, std::stack<std::vector<Generator*>*>& template_stk): 
-            buffer(s), beg(beg_), end(end_), stp(stp_) {
+        For(uint64_t line_num_, const std::string_view& s, int64_t beg_, int64_t end_, int64_t stp_, std::stack<std::vector<Generator*>*>& template_stk): 
+            line_num(line_num_), buffer(s), beg(beg_), end(end_), stp(stp_) {
                 template_stk.push(&inner_template);
             }
         ~For() {
@@ -328,7 +334,8 @@ public:
         };
         std::vector<Generator*> inner_template;
         std::string_view buffer;
-        int64_t beg,end,stp;        
+        int64_t beg,end,stp;
+        uint64_t line_num;
     };
 
     // struct If : Generator {
@@ -395,12 +402,13 @@ public:
             { 8,12,12,12,12,12,12,12,12,12, 8,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,19,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,13,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12},
             { 8,12,12,12,12,12,12,12,12,12, 8,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,17,12,12,12,12,12,12,12,12,12,12,12,20,20,20,20,20,20,20,20,20,20,12,12,12,12,12,12,12,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,12,12,12,12,20,12,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12},
             { 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,23, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,24, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9},
-            {10, 5, 5, 5, 5, 5, 5, 5, 5,22, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,22, 5, 5, 5, 1, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5},
+            {10, 5, 5, 5, 5, 5, 5, 5, 5,22, 0, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,22, 5, 5, 5, 1, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5},
             { 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,23, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,24, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9},
             { 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,25, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9},
             { 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,26, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9},
             { 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5}
         };
+
         const char* file_content_beg = file_content_buffer.get();
 
         uint64_t ptr = 0;
@@ -452,16 +460,16 @@ public:
                     template_stk.top()->push_back(new PlainText(ps));
             }},
             {"Expression",[&](){
-                template_stk.top()->push_back(new Expression(s));
+                template_stk.top()->push_back(new Expression(line_num,s));
             }},
             {"Line",[&](){
-                template_stk.top()->push_back(new Line(a,b));
+                template_stk.top()->push_back(new Line(line_num,a,b));
             }},
             {"LineSet",[&](){
-                template_stk.top()->push_back(new LineSet(a));
+                template_stk.top()->push_back(new LineSet(line_num,a));
             }},
             {"For",[&](){
-                template_stk.top()->push_back(new For(s,a,b,c,template_stk));
+                template_stk.top()->push_back(new For(line_num,s,a,b,c,template_stk));
             }},
             {"check_data_block",[&](){
                 if (data_block){
@@ -684,7 +692,7 @@ public:
         transition_to_actions[0x1715] = {"push"};
 
         transition_to_actions[0x1717] = {
-            "new_line",
+            "new_line"
         };
         transition_to_actions[0x1517] = {
             "new_line",
@@ -702,6 +710,81 @@ public:
             "push"
         };
 
+        // // For
+
+        // transition_to_actions[0x1E08] = {"open_for"};
+        // transition_to_actions[0x1E09] = {"invalid_syntax"};
+        // transition_to_actions[0x1F08] = {"open_for"};
+        // transition_to_actions[0x1F09] = {"invalid_syntax"};
+        // transition_to_actions[0x2008] = {"open_for"};
+        // transition_to_actions[0x2009] = {"invalid_syntax"};
+
+        // transition_to_actions[0x2108] = {"open_for"};
+        // transition_to_actions[0x2109] = {"invalid_syntax"};
+        // transition_to_actions[0x2309] = {"invalid_syntax"};
+        // transition_to_actions[0x2209] = {"invalid_syntax"};
+        
+        // transition_to_actions[0x2409] = {"invalid_syntax"};
+        // transition_to_actions[0x2609] = {"invalid_syntax"};
+        // transition_to_actions[0x2509] = {"invalid_syntax"};
+        
+        // transition_to_actions[0x2709] = {"invalid_syntax"};
+        // transition_to_actions[0x2909] = {"invalid_syntax"};
+        // transition_to_actions[0x2809] = {"invalid_syntax"};
+
+        // transition_to_actions[0x1F20] = {"push"};
+        // transition_to_actions[0x2021] = {"push"};
+
+        // transition_to_actions[0x2122] = {"push"};
+        // transition_to_actions[0x2123] = {"push"};
+        // transition_to_actions[0x2200] = {
+        //     "push"
+        // };
+        // transition_to_actions[0x220A] = {
+        //     "push"
+        // };
+        // transition_to_actions[0x2400] = {
+        //     "push"
+        // };
+        // transition_to_actions[0x240A] = {
+        //     "push"
+        // };
+        // transition_to_actions[0x2224] = {"push"};
+
+        // transition_to_actions[0x2425] = {"push"};
+        // transition_to_actions[0x2426] = {"push"};
+        // transition_to_actions[0x2500] = {
+        //     "push"
+
+        // };
+        // transition_to_actions[0x250A] = {
+        //     "push"
+        // };
+        // transition_to_actions[0x2700] = {
+        //     "push"
+        // };
+        // transition_to_actions[0x270A] = {
+        //     "push"
+        // };
+        // transition_to_actions[0x2527] = {"push"};
+
+        // transition_to_actions[0x2728] = {"push"};
+        // transition_to_actions[0x2729] = {"push"};
+        // transition_to_actions[0x2800] = {
+        //     "push"
+        // };
+        // transition_to_actions[0x280A] = {
+        //     "push"
+        // };
+        // transition_to_actions[0x2A00] = {
+        //     "push"
+        // };
+        // transition_to_actions[0x2A0A] = {
+        //     "push"
+        // };
+        // transition_to_actions[0x282A] = {"push"};
+
+
         try{
 
             auto start = std::chrono::high_resolution_clock::now();
@@ -711,9 +794,35 @@ public:
 
                 pstate = state;
                 state = dfa[state][static_cast<uint8_t>(chr)];
+                
+                // switch (chr) {
+                //     case ' ':
+                //         std::cout << "  sp"; // Represent space as "[ ]"
+                //         break;
+                //     case '\n':
+                //         std::cout << "  \\n"; // Represent newline as "\n "
+                //         break;
+                //     case '\t':
+                //         std::cout << "  \\t"; // Represent tab as "\t "
+                //         break;
+                //     default:
+                //         if (std::isprint(static_cast<unsigned char>(chr))) {
+                //             std::cout << std::setw(4) << std::right << std::setfill(' ') << chr; // Printable chars with fixed width
+                //         } else {
+                //             std::cout << "0x" << std::hex << std::setw(2) << std::setfill('0')
+                //                       << static_cast<int>(static_cast<unsigned char>(chr)) << " ";
+                //         }
+                //         break;
+                // }
+                // std::cout << " : "
+                //   << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(pstate) << " -> "
+                //   << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(state) << " : "
+                //   << std::dec << std::setw(3) << std::right << std::setfill(' ') << static_cast<int>(line_num+1) << "\n";
 
-                for (const auto& action : transition_to_actions[transition])
+                for (const auto& action : transition_to_actions[transition]){
+                    // std::cout << "\t" << action << "\n";
                     actions[action]();
+                }
 
                 if (load_failed) {return;}
             }
@@ -741,6 +850,7 @@ public:
         }
 
         {std::scoped_lock<std::mutex> loading_lock(loading_mutex);}
+        {std::scoped_lock<std::mutex> loading_lock(precomputing_mutex);}
         std::scoped_lock<std::mutex> rendering_lock(rendering_mutex);
 
         try{
@@ -854,6 +964,7 @@ public:
 
                     python_executor->execute("script="+std::to_string(script_index));
                     for (const auto& [var,value] : file_dataframe.get_map(script_index)){
+                        if (!file_variables.contains(var)) continue;
                         uint8_t tries = 8;
                         while (true){
                             python_executor->execute("var_"+var+"="+value);
@@ -905,6 +1016,7 @@ public:
 
                     python_executor->execute("script="+std::to_string(script_index));
                     for (const auto& [var,value] : file_dataframe.get_map(script_index)){
+                        if (!file_variables.contains(var)) continue;
                         uint8_t tries = 8;
                         while (true){
                             python_executor->execute("var_"+var+"="+value);

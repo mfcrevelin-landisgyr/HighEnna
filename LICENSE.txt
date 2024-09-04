@@ -1,7 +1,5 @@
 Landis+Gyr Internal Use License
 
-Version 1.0
-
 Effective Date: Aug 28th, 2024
 
 1. Purpose

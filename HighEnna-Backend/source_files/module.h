@@ -121,6 +121,15 @@ PYBIND11_MODULE(tplbackend, m) {
                 Returns:
                     bool: True if the operation failed, False otherwise.
              )pbdoc")
+        .def("loaded", &TplProject::loaded,
+             pybind11::arg("index"),
+             R"pbdoc(
+                Checks whether loading and parsing the specified template finished (failing or not).
+                Args:
+                    index (int): The index of the template to check.
+                Returns:
+                    bool: True if the operations finished, False otherwise.
+             )pbdoc")
         .def("render_failed", pybind11::overload_cast<int64_t>(&TplProject::render_failed),
              pybind11::arg("index"),
              R"pbdoc(
@@ -192,9 +201,16 @@ PYBIND11_MODULE(tplbackend, m) {
                 Args:
                     index (int): The index of the template.
              )pbdoc")
-        .def("save_modules", &TplProject::save_modules,
+        .def("save_modules", pybind11::overload_cast<int64_t>(&TplProject::save_modules),
+             pybind11::arg("index"),
              R"pbdoc(
-                Saves module import data.
+                Saves module import data for the specified template.
+                Args:
+                    index (int): The index of the template.
+             )pbdoc")
+        .def("save_modules", pybind11::overload_cast<>(&TplProject::save_modules),
+             R"pbdoc(
+                Saves module import data for all templates.
              )pbdoc")
         .def("clear_dataframe", &TplProject::clear_dataframe,
              pybind11::arg("index"),

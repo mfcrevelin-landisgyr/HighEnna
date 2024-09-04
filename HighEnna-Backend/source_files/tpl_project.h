@@ -264,6 +264,12 @@ public:
         return id_to_handler[index]->load_failed;
     }
 
+    bool loaded(int64_t index_) {
+        uint64_t index = abs_index(index_);
+        std::scoped_lock<std::mutex> lock(id_to_handler[index]->loading_mutex);
+        return id_to_handler[index]->loaded;
+    }
+
     bool render_failed(int64_t index_) {
         uint64_t index = abs_index(index_);
         std::scoped_lock<std::mutex,std::mutex> lock(id_to_handler[index]->loading_mutex,id_to_handler[index]->rendering_mutex);
@@ -395,13 +401,13 @@ public:
     void undo(int64_t index_) {
         uint64_t index = abs_index(index_);
         std::scoped_lock<std::mutex,std::mutex> lock(id_to_handler[index]->loading_mutex,id_to_handler[index]->rendering_mutex);
-        return id_to_handler[index]->undo();
+        id_to_handler[index]->undo();
     }
 
     void redo(int64_t index_) {
         uint64_t index = abs_index(index_);
         std::scoped_lock<std::mutex,std::mutex> lock(id_to_handler[index]->loading_mutex,id_to_handler[index]->rendering_mutex);
-        return id_to_handler[index]->redo();
+        id_to_handler[index]->redo();
     }
 
     uint64_t row_count(int64_t index_) {
@@ -427,17 +433,25 @@ public:
     void save_data(int64_t index_) {
         uint64_t index = abs_index(index_);
         std::scoped_lock<std::mutex> lock(id_to_handler[index]->loading_mutex);
-        return id_to_handler[index]->save_data();
+        id_to_handler[index]->save_data();
     }
 
     void save_modules() {
         std::thread t([=](){
             for (auto handler : file_handlers){
                 std::scoped_lock<std::mutex> lock(handler->loading_mutex);
-                handler->save_modules();
+                if (!handler->load_failed)
+                    handler->save_modules();
             }
         });
         t.detach();
+    }
+
+    void save_modules(int64_t index_) {
+        uint64_t index = abs_index(index_);
+        std::scoped_lock<std::mutex> lock(id_to_handler[index]->loading_mutex);
+        if (!id_to_handler[index]->load_failed)
+            id_to_handler[index]->save_modules();
     }
 
 };

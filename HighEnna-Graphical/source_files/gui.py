@@ -12,34 +12,16 @@ import json
 import sys
 import os
 
+
 #https://stackoverflow.com/questions/31836104/pyinstaller-and-onefile-how-to-include-an-image-in-the-exe-file
 def resource_path(relative_path):
     try:
+        # base_path = sys._MEIPASS
         base_path = sys._MEIPASS2
     except Exception:
         base_path = os.path.abspath(".")
 
     return os.path.join(base_path, relative_path)
-
-def set_dark_theme(self):
-    with open(resource_path("assets\\dark_theme.json"), 'r') as json_file:
-        parameters = json.load(json_file)
-
-    palette = self.palette()
-    palette.setColor(QPalette.ColorRole.Window, QColor(parameters["Window"]))
-    palette.setColor(QPalette.ColorRole.WindowText, QColor(parameters["WindowText"]))
-    palette.setColor(QPalette.ColorRole.Base, QColor(parameters["Base"]))
-    palette.setColor(QPalette.ColorRole.AlternateBase, QColor(parameters["AlternateBase"]))
-    palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(parameters["ToolTipBase"]))
-    palette.setColor(QPalette.ColorRole.ToolTipText, QColor(parameters["ToolTipText"]))
-    palette.setColor(QPalette.ColorRole.Text, QColor(parameters["Text"]))
-    palette.setColor(QPalette.ColorRole.Button, QColor(parameters["Button"]))
-    palette.setColor(QPalette.ColorRole.ButtonText, QColor(parameters["ButtonText"]))
-    palette.setColor(QPalette.ColorRole.BrightText, QColor(parameters["BrightText"]))
-    palette.setColor(QPalette.ColorRole.Link, QColor(parameters["Link"]))
-    palette.setColor(QPalette.ColorRole.Highlight, QColor(parameters["Highlight"]))
-    palette.setColor(QPalette.ColorRole.HighlightedText, QColor(parameters["HighlightedText"]))
-    self.setPalette(palette)
 
 application_name = "High Enna"
 
@@ -52,12 +34,12 @@ class Cacher:
                 sanitized_app_name.append(char)
             else:
                 sanitized_app_name.append('_')
-        
+
         self.app_name =  ''.join(sanitized_app_name)
 
         self.cache_dir = os.path.join(user_cache_dir(app_name), '')
         self.path = os.path.join(self.cache_dir,f"{self.app_name}.json")
-        
+
         os.makedirs(self.cache_dir, exist_ok=True)
 
         self.data = {}
@@ -79,32 +61,22 @@ class ProgressBarWindow(QMainWindow):
     def __init__(self, parent, tpl_project):
         super().__init__(parent)
         self.parent = parent
-        
+
         self.tpl_project = tpl_project
-        
-        self.setWindowTitle(application_name + " - Progress Window")
+
+        self.setWindowTitle(application_name + " - Progress bar")
         self.setFixedSize(400, 55)
 
-        # Set up the main widget and layout
         self.main_widget = QWidget()
         self.setCentralWidget(self.main_widget)
         self.layout = QVBoxLayout(self.main_widget)
-        
-        # Progress bar
+
         self.progress_bar = QProgressBar()
         self.layout.addWidget(self.progress_bar)
-        
-        # Status label
+
         self.status_label = QLabel("Initializing...")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.layout.addWidget(self.status_label)
-        
-        # Create a timer to update the progress bar
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.update_progress)
-        self.timer.start(100)
-
-        set_dark_theme(self)
 
         self.progress_bar.setTextVisible(False)
         self.progress_bar.setStyleSheet("""
@@ -119,11 +91,14 @@ class ProgressBarWindow(QMainWindow):
             }
         """)
 
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_progress)
+        self.timer.start(100)
+
     def update_progress(self):
         total = self.tpl_project.total()
         current = self.tpl_project.current()
-        is_finished = self.tpl_project.is_finished()
-        
+
         if total > 0:
             progress = int((float(current) / float(total)) * 100.0)
             self.progress_bar.setValue(progress)
@@ -131,6 +106,9 @@ class ProgressBarWindow(QMainWindow):
         else:
             self.progress_bar.setValue(0)
             self.status_label.setText("Waiting for data...")
+
+    def closeEvent(self,event):
+        self.timer.stop()
 
 
 class TplLogMessageBox(QMainWindow):
@@ -161,7 +139,7 @@ class TplLogMessageBox(QMainWindow):
 
         self.scroll_area_width  = min(1280, int(7*max_w*self.scale)+50)
         self.scroll_area_height = min(600 ,int(14*max_h*self.scale)+35)
-        
+
         layout = QVBoxLayout()
 
         central_widget = QWidget()
@@ -169,7 +147,7 @@ class TplLogMessageBox(QMainWindow):
         self.label = QLabel(self.message)
         self.label.setWordWrap(True)
         self.label.setFont(QFont('Courier New',f_size))
-        
+
         scroll_layout = QHBoxLayout()
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
@@ -178,23 +156,23 @@ class TplLogMessageBox(QMainWindow):
 
         scroll_layout.addWidget(self.scroll_area)
         layout.addLayout(scroll_layout)
-        
+
         button_layout = QHBoxLayout()
-        
+
         ok_button = QPushButton("OK")
         ok_button.setFixedWidth(100)
         ok_button.clicked.connect(self.close)
-        
+
         write_button = QPushButton("Write to file")
         write_button.setFixedWidth(100)
         write_button.clicked.connect(self.write_button_clicked)
-        
+
         button_layout.addWidget(ok_button)
         button_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum))
         button_layout.addWidget(write_button)
-        
+
         layout.addLayout(button_layout)
-        
+
         central_widget.setLayout(layout)
         self.setCentralWidget(central_widget)
 
@@ -206,8 +184,6 @@ class TplLogMessageBox(QMainWindow):
 
         self.setFixedWidth(total_width)
         self.setFixedHeight(total_height)
-
-        set_dark_theme(self)
 
     def write_button_clicked(self):
         try:
@@ -267,17 +243,27 @@ class ModuleListWindow(QMainWindow):
         self.add_file_button.setFixedWidth(150)
         button_layout.addWidget(self.add_file_button)
 
-        button_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
+        button_layout.addSpacerItem(QSpacerItem(0, self.add_file_button.sizeHint().height(), QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed))
 
         self.remove_button = QPushButton("Remove Import")
         self.remove_button.clicked.connect(self.remove_selected)
         self.remove_button.setFixedWidth(150)
         button_layout.addWidget(self.remove_button)
 
-        self.print_button = QPushButton("Print")
-        self.print_button.clicked.connect(self.printt)
-        self.print_button.setFixedWidth(150)
-        button_layout.addWidget(self.print_button)
+        button_layout.addSpacerItem(QSpacerItem(0, self.add_file_button.sizeHint().height(), QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
+
+        self.export_button = QPushButton("Export")
+        self.export_button.clicked.connect(self.export_file)
+        self.list_widget.itemSelectionChanged.connect(self.update_export_button_state)
+        self.export_button.setFixedWidth(150)
+        self.export_button.setEnabled(False)
+        button_layout.addWidget(self.export_button)
+
+        self.apply_button = QPushButton("Apply")
+        self.apply_button.clicked.connect(self.apply_changes)
+        self.apply_button.setFixedWidth(150)
+        self.apply_button.setEnabled(False)
+        button_layout.addWidget(self.apply_button)
 
         self.org_imported_modules = set()
         self.org_imported_from_modules = set()
@@ -291,7 +277,7 @@ class ModuleListWindow(QMainWindow):
         self.rmv_imported_from_modules = set()
         self.rmv_imported_file_modules = set()
 
-        
+
         self.item_to_set = dict()
 
         if self.tpl_index is None:
@@ -304,23 +290,22 @@ class ModuleListWindow(QMainWindow):
             self.org_imported_from_modules = self.org_imported_from_modules.union(self.tpl_project.get_from_modules(self.tpl_index))
             self.org_imported_file_modules = self.org_imported_file_modules.union(self.tpl_project.get_file_modules(self.tpl_index))
 
-        
+
         for module_name in self.org_imported_modules:
             item = f"import {module_name}"
             self.list_widget.addItem(item)
             self.item_to_set[item] = ("imported_modules",module_name)
-        
+
         for module_name,attribute in self.org_imported_from_modules:
             item = f"from {module_name} import {attribute}"
             self.list_widget.addItem(item)
             self.item_to_set[item] = ("imported_from_modules",(module_name,attribute))
-        
+
         for file_name,file_content in self.org_imported_file_modules:
             item = f"File: {file_name}"
             self.list_widget.addItem(item)
             self.item_to_set[item] = ("imported_file_modules",(file_name,file_content))
 
-        set_dark_theme(self)
         self.screen_geometry = QGuiApplication.primaryScreen().geometry()
 
     def adjust_size(self):
@@ -335,28 +320,55 @@ class ModuleListWindow(QMainWindow):
 
         self.resize(total_width, total_height)
 
+    def update_export_button_state(self):
+        selected_items = self.list_widget.selectedItems()
+        if selected_items:
+            selected_text = selected_items[0].text()
+            # Check if selected item is a file item
+            if selected_text.startswith("File: "):
+                self.export_button.setEnabled(True)
+            else:
+                self.export_button.setEnabled(False)
+        else:
+            self.export_button.setEnabled(False)
 
-    def printt(self):
-        modules = []
-        from_modules = []
-        files = []
-        for t,c in self.items:
-            if (t=='m'):
-                modules.append(c)
-            elif (t=='fm'):
-                from_modules.append(c)
-            elif (t=='f'):
-                files.append(c)
+    def export_file(self):
+        file_dialog = QFileDialog(self)
+        file_path, _ = file_dialog.getSaveFileName(self, "Export File", "", "Text Files (*.txt);;All Files (*)")
+        if file_path:
+            selected_items = self.list_widget.selectedItems()
 
-        print("Modules:")
-        for i in modules:
-            print(f"\t{i}")
-        print("From Modules:")
-        for i in from_modules:
-            print(f"\t{i}")
-        print("Files:")
-        for i in files:
-            print(f"\t{i[0]}:{i[1][:20]}")
+            if selected_items:
+                item = selected_items[0].text()
+                item_type,item_params = self.item_to_set[item]
+                file_name, file_content = item_params
+                with open(file_path, 'w') as file:
+                    file.write(file_content)
+
+    def apply_changes(self):
+
+        if self.tpl_index is None:
+            for tpl_index in range(len(self.tpl_project)):
+                self.tpl_project.update_modules(tpl_index,self.add_imported_modules,self.rmv_imported_modules)
+                self.tpl_project.update_from_modules(tpl_index,self.add_imported_from_modules,self.rmv_imported_from_modules)
+                self.tpl_project.update_file_modules(tpl_index,self.add_imported_file_modules,self.rmv_imported_file_modules)
+            self.tpl_project.save_modules()
+        else:
+            self.tpl_project.update_modules(self.tpl_index,self.add_imported_modules,self.rmv_imported_modules)
+            self.tpl_project.update_from_modules(self.tpl_index,self.add_imported_from_modules,self.rmv_imported_from_modules)
+            self.tpl_project.update_file_modules(self.tpl_index,self.add_imported_file_modules,self.rmv_imported_file_modules)
+            self.tpl_project.save_modules(self.tpl_index)
+        self.close()
+
+    def item_modified(self):
+        active = False
+        active |= len(self.add_imported_modules)>0
+        active |= len(self.add_imported_from_modules)>0
+        active |= len(self.add_imported_file_modules)>0
+        active |= len(self.rmv_imported_modules)>0
+        active |= len(self.rmv_imported_from_modules)>0
+        active |= len(self.rmv_imported_file_modules)>0
+        self.apply_button.setEnabled(active)
 
     def add_module(self):
         dialog = QDialog(self)
@@ -388,6 +400,7 @@ class ModuleListWindow(QMainWindow):
                 self.list_widget.addItem(item)
         dialog.accept()
         self.adjust_size()
+        self.item_modified()
 
     def add_from_module(self):
         dialog = QDialog(self)
@@ -423,6 +436,7 @@ class ModuleListWindow(QMainWindow):
                 self.list_widget.addItem(item)
         dialog.accept()
         self.adjust_size()
+        self.item_modified()
 
     def add_file(self):
         file_dialog = QFileDialog(self)
@@ -450,6 +464,7 @@ class ModuleListWindow(QMainWindow):
                     self.item_to_set[item] = ("imported_file_modules",(file_name,file_content))
                     self.list_widget.addItem(item)
         self.adjust_size()
+        self.item_modified()
 
     def remove_selected(self):
         selected_items = self.list_widget.selectedItems()
@@ -484,19 +499,8 @@ class ModuleListWindow(QMainWindow):
                 else:
                     if file_content in add_contents:
                         self.add_imported_file_modules = set((n,c) for n,c in self.add_imported_file_modules if not c == file_content)
-
-    def closeEvent(self, event):
-        if self.tpl_index is None:
-            for tpl_index in range(len(self.tpl_project)):
-                self.tpl_project.update_modules(tpl_index,self.add_imported_modules,self.rmv_imported_modules)
-                self.tpl_project.update_from_modules(tpl_index,self.add_imported_from_modules,self.rmv_imported_from_modules)
-                self.tpl_project.update_file_modules(tpl_index,self.add_imported_file_modules,self.rmv_imported_file_modules)
-        else:
-            self.tpl_project.update_modules(self.tpl_index,self.add_imported_modules,self.rmv_imported_modules)
-            self.tpl_project.update_from_modules(self.tpl_index,self.add_imported_from_modules,self.rmv_imported_from_modules)
-            self.tpl_project.update_file_modules(self.tpl_index,self.add_imported_file_modules,self.rmv_imported_file_modules)
-        self.tpl_project.save_modules()
-        event.accept()
+        self.adjust_size()
+        self.item_modified()
 
 class TplModel(QAbstractTableModel):
     def __init__(self,parent,tpl_project, tpl_index):
@@ -505,6 +509,9 @@ class TplModel(QAbstractTableModel):
         self.tpl_project = tpl_project
         self.tpl_index = tpl_index
 
+        while not self.tpl_project.loaded(self.tpl_index):
+            sleep(.01)
+
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
         if role in (Qt.ItemDataRole.DisplayRole,Qt.ItemDataRole.EditRole):
             return self.tpl_project.get_cell(self.tpl_index,index.row(), index.column())
@@ -512,7 +519,7 @@ class TplModel(QAbstractTableModel):
     def setData(self, index, value, role=Qt.ItemDataRole.EditRole):
         if not role == Qt.ItemDataRole.EditRole:
             return False
-        
+
         self.tpl_project.set_cell(self.tpl_index,index.row(), index.column(),str(value))
         self.emit_data_change()
         return True
@@ -590,34 +597,29 @@ class PopupMessage(QDialog):
     def __init__(self, parent, message):
         super().__init__(parent)
         self.setWindowModality(Qt.WindowModality.ApplicationModal)
-        self.setWindowTitle("Popup Message")
-        
-        title = application_name+" - Popup"
 
-        self.setWindowTitle(title)
+        self.setWindowTitle(application_name + " - Message")
 
         layout = QVBoxLayout()
-        
+
         message_label_layout = QHBoxLayout()
         message_label_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         message_label = QLabel(message)
         message_label.setWordWrap(True)
         message_label_layout.addWidget(message_label)
-        
+
         button_layout = QHBoxLayout()
         button_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         ok_button = QPushButton("OK")
         ok_button.clicked.connect(self.accept)
         button_layout.addWidget(ok_button)
-        
+
         layout.addLayout(message_label_layout)
         layout.addLayout(button_layout)
-        
+
         self.setLayout(layout)
 
         self.setMinimumSize(200, 80)
-
-        set_dark_theme(self)
 
 class TplTableView(QTableView):
 
@@ -633,7 +635,7 @@ class TplTableView(QTableView):
         elif event.type() == QEvent.Type.HoverLeave:
             self.releaseMouse()
         return super().event(event)
-        
+
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.RightButton:
             g_position = event.globalPosition()
@@ -727,7 +729,6 @@ class TplTableView(QTableView):
 
     def createContextMenu(self, position, index_at):
         menu = QMenu()
-        set_dark_theme(menu)
 
         selected_indices = self.selectedIndexes()
         rows = list({idx.row() for idx in selected_indices})
@@ -762,7 +763,7 @@ class TplTableView(QTableView):
                 rows[i] += 1
             self.model().insertRows(rows)
         elif action == n_rows_action:
-            num, ok = QInputDialog.getInt(self, "Insert N Rows Above", "Number of rows:", 1, 1)
+            num, ok = QInputDialog.getInt(self, "", "Number of rows:", 1, 1)
             if ok:
                 self.model().insertRows(num)
         elif action == delete_action:
@@ -770,6 +771,10 @@ class TplTableView(QTableView):
         elif action == duplicate_action:
             self.model().duplicateRows(rows)
         elif action == render_action:
+            if self.tpl_project.row_count(index) == 0:
+                window = PopupMessage(self,"No data to render.")
+                window.show()
+                return
             self.parent.tpl_project.render(self.model().tpl_index, rows)
             window = ProgressBarWindow(self.parent, self.parent.tpl_project)
             window.show()
@@ -779,7 +784,7 @@ class TplTableView(QTableView):
             selected_indexes = self.selectedIndexes()
             if not selected_indexes:
                 return
-            
+
             # Sort selected indexes by row and column
             selected_indexes.sort(key=lambda x: (x.row(), x.column()))
 
@@ -789,7 +794,7 @@ class TplTableView(QTableView):
                 if index.row() not in rows:
                     rows[index.row()] = {}
                 rows[index.row()][index.column()] = index.data(Qt.ItemDataRole.DisplayRole)
-            
+
             # Convert to a string with tab-separated values for each row and newlines between rows
             text_to_copy = ""
             for row in sorted(rows.keys()):
@@ -856,13 +861,22 @@ class CustomScrollArea(QScrollArea):
             super().wheelEvent(event)
 
 class ClickableLabel(QLabel):
+    left_clicked = pyqtSignal()
+    right_clicked = pyqtSignal()
     clicked = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        
+
     def mousePressEvent(self, event):
-        self.clicked.emit()
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.left_clicked.emit()
+            self.clicked.emit()
+        elif event.button() == Qt.MouseButton.RightButton:
+            self.right_clicked.emit()
+            self.clicked.emit()
+        else:
+            super().mousePressEvent(event)
 
 class MainWindow(QWidget):
     def __init__(self):
@@ -956,20 +970,13 @@ class MainWindow(QWidget):
         self.directory_path = ""
         self.output_directory_path = ""
 
-        set_dark_theme(self)
+        self.tpl_project = None
 
         default_project_dir = cacher["MainWindow:default_project_dir"]
         if default_project_dir:
             self.set_directory(default_project_dir)
-        
+
     # --- EVENT HANDLERS --------------------------------------------------------------------------------
-
-    def test_push_button_on_clicked(self):
-
-        size = self.size()
-        width = size.width()
-        height = size.height()
-        print(f"Current window size: {width}x{height}")
 
     def directory_push_button_on_clicked(self):
         new_path = QFileDialog.getExistingDirectory (self, application_name + " - Choose project directory", directory=os.path.dirname(self.directory_path))
@@ -994,16 +1001,28 @@ class MainWindow(QWidget):
         self.output_directory_line_edit.clearFocus()
 
     def render_all_push_button_on_clicked(self):
+        if self.tpl_project is None:
+            window = PopupMessage(self,"No project selected.")
+            window.show()
+            return
+        if any(self.tpl_project.row_count(tpl_index) for tpl_index in range(len(self.tpl_project))) == 0:
+            window = PopupMessage(self,"No data to render.")
+            window.show()
+            return
         self.tpl_project.render()
         window = ProgressBarWindow(self,self.tpl_project)
         window.show()
         self.color_tpl_names_on_scroll_list_labels()
 
     def all_modules_push_button_on_clicked(self):
+        if self.tpl_project is None:
+            window = PopupMessage(self,"No project selected.")
+            window.show()
+            return
         module_list_window = ModuleListWindow(self,self.tpl_project)
         module_list_window.show()
 
-    def clickable_label_on_clicked(self, index):
+    def clickable_label_on_left_clicked(self, index):
         if self.tpl_project.load_failed(index):
             window = TplLogMessageBox(self,index)
             window.show()
@@ -1014,6 +1033,7 @@ class MainWindow(QWidget):
                 table_view = self.scroll_area_script_table_list[index]
                 table_model = table_view.model()
                 table_view.setHidden(False)
+                table_model.emit_data_change()
                 self.adjust_size()
             else:
                 table_view = self.scroll_area_script_table_list[index]
@@ -1024,17 +1044,31 @@ class MainWindow(QWidget):
 
             table_view = self.scroll_area_script_table_list[index]
             table_model = table_view.model()
-                
+            table_model.emit_data_change()
+
             table_view.setHidden(False)
             self.opened_script_index = index
             self.adjust_size()
 
+    def clickable_label_on_right_clicked(self, index):
+        window = TplLogMessageBox(self,index)
+        window.show()
+        return
+
     def update_push_button_on_clicked(self,path):
+        if self.tpl_project is None:
+            window = PopupMessage(self,"No project selected.")
+            window.show()
+            return
         self.tpl_project.update()
         self.resize_scroll_area_to_fit_tpl_list()
         self.list_tpl_names_on_scroll_list_labels()
 
     def render_button_on_clicked(self, index):
+        if self.tpl_project.row_count(index) == 0:
+            window = PopupMessage(self,"No data to render.")
+            window.show()
+            return
         self.tpl_project.render(index)
         window = ProgressBarWindow(self,self.tpl_project)
         window.show()
@@ -1047,7 +1081,7 @@ class MainWindow(QWidget):
     def module_menu_entry_on_clicked(self, index):
         module_list_window = ModuleListWindow(self,self.tpl_project,index)
         module_list_window.show()
-    
+
     # --- GUI METHODS -----------------------------------------------------------------------------------
 
     def set_directory(self,directory_path):
@@ -1059,8 +1093,7 @@ class MainWindow(QWidget):
         self.directory_path_hash = hashlib.sha256(directory_path.encode()).hexdigest()[:16]
         self.directory_line_edit.setText(directory_path)
 
-        p = TplProject(directory_path)
-        self.tpl_project = p
+        self.tpl_project = TplProject(directory_path)
 
         self.resize_scroll_area_to_fit_tpl_list()
         self.list_tpl_names_on_scroll_list_labels()
@@ -1071,7 +1104,7 @@ class MainWindow(QWidget):
             output_directory_path.replace('/','\\')
             if not output_directory_path.endswith('\\'):
                 output_directory_path+='\\'
-        
+
         self.output_directory_path = output_directory_path
         self.output_directory_line_edit.setText(output_directory_path)
         self.tpl_project.set_output_directory(output_directory_path)
@@ -1154,7 +1187,6 @@ class MainWindow(QWidget):
             """)
             dropdown_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
             dropdown_menu = QMenu()
-            set_dark_theme(dropdown_menu)
 
             module_action = dropdown_menu.addAction("Modules")
             module_action.triggered.connect(lambda _, index=i: self.module_menu_entry_on_clicked(index))
@@ -1169,7 +1201,8 @@ class MainWindow(QWidget):
 
 
             label = ClickableLabel()
-            label.clicked.connect(lambda index=i: self.clickable_label_on_clicked(index))
+            label.left_clicked.connect(lambda index=i: self.clickable_label_on_left_clicked(index))
+            label.right_clicked.connect(lambda index=i: self.clickable_label_on_right_clicked(index))
             self.scroll_area_label_list.append(label)
             entry_hbox_layout.addWidget(label)
 
@@ -1228,10 +1261,10 @@ class MainWindow(QWidget):
             elif self.tpl_project.render_failed(i):
                 self.scroll_area_label_list[i].setStyleSheet('color: #FF9333;')
             else:
-                self.scroll_area_label_list[i].setStyleSheet('color: #FFFFFF;')
+                self.scroll_area_label_list[i].setStyleSheet('')
 
     def adjust_size(self):
-        
+
         if self.isMaximized():
             return
 

@@ -444,9 +444,6 @@ public:
 		}
 
 		dataframe["col_names"] = col_names;
-
-		dataframe["num_rows"] = num_rows;
-		dataframe["num_cols"] = num_cols;
 	}
 
 	bool deserialize(const json& j) {
@@ -454,8 +451,6 @@ public:
 		std::unordered_map<std::string, std::string> temp_empty_data;
 		std::map<uint64_t, Script*> temp_index_to_script;
 		std::set<std::string> temp_col_names;
-		uint64_t temp_num_rows;
-		uint64_t temp_num_cols;
 
 		try {
 			const json& dataframe = j.at("dataframe");
@@ -475,14 +470,23 @@ public:
 			for (auto& [_,col] : dataframe.at("col_names").items())
 				temp_col_names.insert(col);
 
-			temp_num_rows = dataframe.at("num_rows").get<uint64_t>();
-			temp_num_cols = dataframe.at("num_cols").get<uint64_t>();
 
 			// If all reads succeeded, move the temporary variables into the class members
-			empty_data = std::move(temp_empty_data);
-			clear();
+			index_to_script.clear();
+			index_to_column.clear();
+
+			auto node = head;
+			while (node){
+				auto to_delete = node;
+				node = node->next;
+				delete to_delete;
+			}
 			head = nullptr;
 			tail = nullptr;
+			
+			for (auto& [col_name,val] : temp_empty_data)
+				empty_data[col_name]=val;
+			
 			for (auto& [index, script] : temp_index_to_script) {
 				if (!head) {
 					head = tail = script;
@@ -494,12 +498,13 @@ public:
 				index_to_script[index] = script;
 				modded_indices.insert(index);
 			}
-			col_names = std::move(temp_col_names);
-			uint64_t i = 0;
+			
+			for (auto& col_name : temp_col_names)
+				col_names.insert(col_name);
+			
+			num_cols = 0;
 			for (const auto& col_name : col_names)
-				index_to_column[i++] = col_name;
-			num_rows = temp_num_rows;
-			num_cols = temp_num_cols;
+				index_to_column[num_cols++] = col_name;
 
 			update_indices();
 
@@ -509,6 +514,23 @@ public:
 				delete script;
 			return true;
 		}
+	}
+
+	void filter_variables(std::set<std::string_view> vars){
+		for (const auto& name : col_names) {
+			if (!vars.contains(name)) {
+				col_names.erase(name);
+				auto node = head;
+				while (node){
+					node->data.erase(name);
+					node = node->next;
+				}
+				empty_data.erase(name);
+			}
+		}
+		num_cols = 0;
+		for (const auto& col_name : col_names)
+			index_to_column[num_cols++] = col_name;
 	}
 
 public:
