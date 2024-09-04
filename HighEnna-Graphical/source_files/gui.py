@@ -24,6 +24,7 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 application_name = "High Enna"
+version = "1.0.1"
 
 class Cacher:
     def __init__(self, app_name):
@@ -882,7 +883,7 @@ class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle(application_name)
+        self.setWindowTitle(application_name + " - " + version)
         self.setWindowIcon(QIcon(resource_path("assets\\icons\\icon.png")))
 
         self.directory_path = ""
