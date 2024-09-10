@@ -59,10 +59,11 @@ public:
                 std::string file_name = entry.path().filename().string();
                 std::string file_path = entry.path().string();
 
-                if (file_paths.contains(file_path))
+                if (file_paths.contains(file_path)){
                     file_handler = path_to_handler[file_path];
-                else
+                } else {
                     file_handler = new TplFileHandler(filesystem_output_directory_path.string()+"\\",file_path,file_name,python_executor,task_counter);
+                }
 
                 file_handlers.insert(file_handler);
                 cur_file_paths.insert(file_path);
@@ -72,6 +73,7 @@ public:
         }
 
         std::thread t([=](){
+
             for (auto file_handler : file_handlers)
                 file_handler->update();
 
@@ -104,6 +106,7 @@ public:
 
         uint64_t id=0;
         id_to_handler.clear();
+        std::unordered_set<std::string> file_paths_to_erase;
         for (const std::string& file_path : file_paths){   
             file_handler = path_to_handler[file_path];
             if (cur_file_paths.contains(file_path)){
@@ -111,10 +114,12 @@ public:
             } else {
                 path_to_handler.erase(file_path);
                 file_handlers.erase(file_handler);
-                file_paths.erase(file_path);
+                file_paths_to_erase.insert(file_path);
                 delete file_handler;
             }
         }
+        for (const std::string& file_path : file_paths_to_erase)   
+                file_paths.erase(file_path);
     }
 
 public:
@@ -286,6 +291,12 @@ public:
         uint64_t index = abs_index(index_);
         std::scoped_lock<std::mutex,std::mutex> lock(id_to_handler[index]->loading_mutex,id_to_handler[index]->rendering_mutex);
         return id_to_handler[index]->get_log();
+    }
+    
+    void clear_log(int64_t index_) {
+        uint64_t index = abs_index(index_);
+        std::scoped_lock<std::mutex,std::mutex> lock(id_to_handler[index]->loading_mutex,id_to_handler[index]->rendering_mutex);
+        return id_to_handler[index]->clear_log();
     }
 
     std::string path(int64_t index_) {

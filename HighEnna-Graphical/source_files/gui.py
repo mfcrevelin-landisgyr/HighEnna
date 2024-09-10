@@ -24,7 +24,7 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 application_name = "High Enna"
-version = "1.0.1"
+version = "1.2.0"
 
 class Cacher:
     def __init__(self, app_name):
@@ -117,6 +117,13 @@ class TplLogMessageBox(QMainWindow):
         super().__init__(parent)
 
         self.message = parent.tpl_project.log(tpl_index)
+
+        if len(self.message) == 0:
+            self.message = ' '*32
+
+        self.parent = parent
+        self.tpl_index = tpl_index
+
         self.name = parent.tpl_project.name(tpl_index)
         if not cacher[f"TplLogMessageBox:default_save_dir:{self.name}"]:
             cacher[f"TplLogMessageBox:default_save_dir:{self.name}"] = os.path.dirname(parent.tpl_project.path(tpl_index))
@@ -164,11 +171,16 @@ class TplLogMessageBox(QMainWindow):
         ok_button.setFixedWidth(100)
         ok_button.clicked.connect(self.close)
 
+        clear_button = QPushButton("Clear")
+        clear_button.setFixedWidth(100)
+        clear_button.clicked.connect(self.clear_button_clicked)
+
         write_button = QPushButton("Write to file")
         write_button.setFixedWidth(100)
         write_button.clicked.connect(self.write_button_clicked)
 
         button_layout.addWidget(ok_button)
+        button_layout.addWidget(clear_button)
         button_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum))
         button_layout.addWidget(write_button)
 
@@ -179,12 +191,22 @@ class TplLogMessageBox(QMainWindow):
 
         size_hint = self.sizeHint()
 
-        self.screen_geometry = QGuiApplication.primaryScreen().geometry()
-        total_width = min(size_hint.width(),self.screen_geometry.width())
-        total_height = min(size_hint.height(),self.screen_geometry.height()-100)
+        current_screen = QApplication.screenAt(self.geometry().center())
+
+        if current_screen:
+            available_geometry = current_screen.availableGeometry()
+        else:
+            available_geometry = QApplication.primaryScreen().availableGeometry()
+
+        total_width = min(size_hint.width(),available_geometry.width()-75)
+        total_height = min(size_hint.height(),available_geometry.height()-100)
 
         self.setFixedWidth(total_width)
         self.setFixedHeight(total_height)
+
+    def clear_button_clicked(self):
+        self.parent.tpl_project.clear_log(self.tpl_index)
+        self.close()
 
     def write_button_clicked(self):
         try:
@@ -229,36 +251,15 @@ class ModuleListWindow(QMainWindow):
         button_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.addLayout(button_layout)
 
-        self.add_module_button = QPushButton("Import Module")
-        self.add_module_button.clicked.connect(self.add_module)
-        self.add_module_button.setFixedWidth(150)
-        button_layout.addWidget(self.add_module_button)
-
-        self.add_from_module_button = QPushButton("Import From Module")
-        self.add_from_module_button.clicked.connect(self.add_from_module)
-        self.add_from_module_button.setFixedWidth(150)
-        button_layout.addWidget(self.add_from_module_button)
-
-        self.add_file_button = QPushButton("Import File")
-        self.add_file_button.clicked.connect(self.add_file)
-        self.add_file_button.setFixedWidth(150)
-        button_layout.addWidget(self.add_file_button)
-
-        button_layout.addSpacerItem(QSpacerItem(0, self.add_file_button.sizeHint().height(), QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed))
-
+        self.new_import_button = QPushButton("New Import")
+        self.new_import_button.clicked.connect(self.open_import_menu)
+        button_layout.addWidget(self.new_import_button)
         self.remove_button = QPushButton("Remove Import")
         self.remove_button.clicked.connect(self.remove_selected)
         self.remove_button.setFixedWidth(150)
         button_layout.addWidget(self.remove_button)
 
-        button_layout.addSpacerItem(QSpacerItem(0, self.add_file_button.sizeHint().height(), QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
-
-        self.export_button = QPushButton("Export")
-        self.export_button.clicked.connect(self.export_file)
-        self.list_widget.itemSelectionChanged.connect(self.update_export_button_state)
-        self.export_button.setFixedWidth(150)
-        self.export_button.setEnabled(False)
-        button_layout.addWidget(self.export_button)
+        button_layout.addSpacerItem(QSpacerItem(0, self.new_import_button.sizeHint().height(), QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
 
         self.apply_button = QPushButton("Apply")
         self.apply_button.clicked.connect(self.apply_changes)
@@ -278,6 +279,8 @@ class ModuleListWindow(QMainWindow):
         self.rmv_imported_from_modules = set()
         self.rmv_imported_file_modules = set()
 
+        self.list_widget.itemDoubleClicked.connect(self.double_click_item)
+        self.list_widget.keyPressEvent = self.key_press_event
 
         self.item_to_set = dict()
 
@@ -307,8 +310,6 @@ class ModuleListWindow(QMainWindow):
             self.list_widget.addItem(item)
             self.item_to_set[item] = ("imported_file_modules",(file_name,file_content))
 
-        self.screen_geometry = QGuiApplication.primaryScreen().geometry()
-
     def adjust_size(self):
         total_width = self.list_widget.sizeHintForColumn(0) + 20
         total_height = self.list_widget.sizeHintForRow(0) * self.list_widget.count() + 20
@@ -316,60 +317,19 @@ class ModuleListWindow(QMainWindow):
         total_width = max(total_width,self.width())
         total_height = max(total_height,self.height())
 
-        total_width = min(total_width,self.screen_geometry.width())
-        total_height = min(total_height,self.screen_geometry.height()-100)
+        current_screen = QApplication.screenAt(self.geometry().center())
+
+        if current_screen:
+            available_geometry = current_screen.availableGeometry()
+        else:
+            available_geometry = QApplication.primaryScreen().availableGeometry()
+
+        total_width = min(total_width,available_geometry.width()-75)
+        total_height = min(total_height,available_geometry.height()-100)
 
         self.resize(total_width, total_height)
 
-    def update_export_button_state(self):
-        selected_items = self.list_widget.selectedItems()
-        if selected_items:
-            selected_text = selected_items[0].text()
-            # Check if selected item is a file item
-            if selected_text.startswith("File: "):
-                self.export_button.setEnabled(True)
-            else:
-                self.export_button.setEnabled(False)
-        else:
-            self.export_button.setEnabled(False)
-
-    def export_file(self):
-        file_dialog = QFileDialog(self)
-        file_path, _ = file_dialog.getSaveFileName(self, "Export File", "", "Text Files (*.txt);;All Files (*)")
-        if file_path:
-            selected_items = self.list_widget.selectedItems()
-
-            if selected_items:
-                item = selected_items[0].text()
-                item_type,item_params = self.item_to_set[item]
-                file_name, file_content = item_params
-                with open(file_path, 'w') as file:
-                    file.write(file_content)
-
-    def apply_changes(self):
-
-        if self.tpl_index is None:
-            for tpl_index in range(len(self.tpl_project)):
-                self.tpl_project.update_modules(tpl_index,self.add_imported_modules,self.rmv_imported_modules)
-                self.tpl_project.update_from_modules(tpl_index,self.add_imported_from_modules,self.rmv_imported_from_modules)
-                self.tpl_project.update_file_modules(tpl_index,self.add_imported_file_modules,self.rmv_imported_file_modules)
-            self.tpl_project.save_modules()
-        else:
-            self.tpl_project.update_modules(self.tpl_index,self.add_imported_modules,self.rmv_imported_modules)
-            self.tpl_project.update_from_modules(self.tpl_index,self.add_imported_from_modules,self.rmv_imported_from_modules)
-            self.tpl_project.update_file_modules(self.tpl_index,self.add_imported_file_modules,self.rmv_imported_file_modules)
-            self.tpl_project.save_modules(self.tpl_index)
-        self.close()
-
-    def item_modified(self):
-        active = False
-        active |= len(self.add_imported_modules)>0
-        active |= len(self.add_imported_from_modules)>0
-        active |= len(self.add_imported_file_modules)>0
-        active |= len(self.rmv_imported_modules)>0
-        active |= len(self.rmv_imported_from_modules)>0
-        active |= len(self.rmv_imported_file_modules)>0
-        self.apply_button.setEnabled(active)
+    # ---------- Imports ----------
 
     def add_module(self):
         dialog = QDialog(self)
@@ -397,8 +357,9 @@ class ModuleListWindow(QMainWindow):
             else:
                 self.add_imported_modules.add(module_name)
                 item = f"import {module_name}"
-                self.item_to_set[item] = ("imported_modules",(module_name,))
+                self.item_to_set[item] = ("imported_modules",module_name)
                 self.list_widget.addItem(item)
+    
         dialog.accept()
         self.adjust_size()
         self.item_modified()
@@ -435,18 +396,20 @@ class ModuleListWindow(QMainWindow):
                 item = f"from {module_name} import {attribute}"
                 self.item_to_set[item] = ("imported_from_modules",(module_name,attribute))
                 self.list_widget.addItem(item)
+      
         dialog.accept()
         self.adjust_size()
         self.item_modified()
 
     def add_file(self):
         file_dialog = QFileDialog(self)
-        file_dialog.setFileMode(QFileDialog.FileMode.ExistingFiles)
+        file_dialog.setFileMode(QFileDialog.FileMode.ExistingFile)
         file_dialog.setNameFilter("Python Files (*.py)")
         file_dialog.setViewMode(QFileDialog.ViewMode.List)
         if file_dialog.exec():
             file_paths = file_dialog.selectedFiles()
-            for file_path in file_paths:
+            if file_paths:
+                file_path = file_paths[0]
                 with open(file_path, 'r') as file:
                     file_content = file.read()
                 file_name = os.path.basename(file_path)
@@ -464,8 +427,11 @@ class ModuleListWindow(QMainWindow):
                     item = f"File: {file_name}"
                     self.item_to_set[item] = ("imported_file_modules",(file_name,file_content))
                     self.list_widget.addItem(item)
-        self.adjust_size()
-        self.item_modified()
+       
+                self.adjust_size()
+                self.item_modified()
+
+    # ---------- Remove ----------
 
     def remove_selected(self):
         selected_items = self.list_widget.selectedItems()
@@ -475,8 +441,7 @@ class ModuleListWindow(QMainWindow):
             self.list_widget.takeItem(index)
 
         for item in selected_items:
-            item = item.text()
-            item_type,item_params = self.item_to_set[item]
+            item_type,item_params = self.item_to_set[item.text()]
             if item_type == "imported_modules":
                 module_name = item_params
                 if module_name in self.org_imported_modules:
@@ -500,8 +465,216 @@ class ModuleListWindow(QMainWindow):
                 else:
                     if file_content in add_contents:
                         self.add_imported_file_modules = set((n,c) for n,c in self.add_imported_file_modules if not c == file_content)
+       
         self.adjust_size()
         self.item_modified()
+
+    # ---------- Edits ----------
+
+    def edit_module(self,item,module_name):
+        dialog = QDialog(self)
+        dialog.setWindowTitle(application_name + " - Import Module")
+
+        layout = QFormLayout(dialog)
+        module_input = QLineEdit()
+        module_input.setPlaceholderText("module")
+        module_input.setText(module_name)
+        layout.addRow("Module:", module_input)
+
+        button_box = QPushButton("Import", dialog)
+        button_box.clicked.connect(lambda: self.accept_edit_module(item, dialog, module_name, module_input.text()))
+        layout.addWidget(button_box)
+
+        dialog.exec()
+
+    def accept_edit_module(self, item, dialog, module_name, new_module_name):
+        new_module_name = new_module_name.strip()
+        if new_module_name:
+
+            if module_name in self.org_imported_modules:
+                self.rmv_imported_modules.add(module_name)
+            else:
+                if module_name in self.add_imported_modules:
+                    self.add_imported_modules.remove(module_name)
+
+            item_text = f"import {new_module_name}"
+            item.setText(item_text)
+            
+            if new_module_name in self.org_imported_modules:
+                if new_module_name in self.rmv_imported_modules:
+                    self.rmv_imported_modules.remove(new_module_name)
+            else:
+                self.add_imported_modules.add(new_module_name)
+                self.item_to_set[item_text] = ("imported_modules",new_module_name)
+
+        dialog.accept()
+        self.adjust_size()
+        self.item_modified()
+
+    def edit_from_module(self, item, module_name, module_attribute):
+        dialog = QDialog(self)
+        dialog.setWindowTitle(application_name + " - Import From Module")
+
+        layout = QFormLayout(dialog)
+        module_input = QLineEdit()
+        module_input.setPlaceholderText("module")
+        module_input.setText(module_name)
+        attribute_input = QLineEdit()
+        attribute_input.setPlaceholderText("attribute")
+        attribute_input.setText(module_attribute)
+        layout.addRow("Module:", module_input)
+        layout.addRow("Attribute:", attribute_input)
+
+        button_box = QPushButton("Import", dialog)
+        button_box.clicked.connect(lambda: self.accept_edit_from_module(item, dialog, module_name, module_attribute, module_input.text(), attribute_input.text()))
+        layout.addWidget(button_box)
+
+        dialog.exec()
+
+    def accept_edit_from_module(self, item, dialog, module_name, module_attribute, new_module_name, new_module_attribute):
+        new_module_name = new_module_name.strip()
+        new_module_attribute = new_module_attribute.strip()
+        if new_module_name and new_module_attribute:
+
+            if (module_name,module_attribute) in self.org_imported_from_modules:
+                self.rmv_imported_from_modules.add((module_name,module_attribute))
+            else:
+                if (module_name,module_attribute) in self.add_imported_from_modules:
+                    self.add_imported_from_modules.remove((module_name,module_attribute))
+
+            item_text = f"from {new_module_name} import {new_module_attribute}"
+            item.setText(item_text)
+            
+            if (new_module_name,new_module_attribute) in self.org_imported_from_modules:
+                if (new_module_name,new_module_attribute) in self.rmv_imported_from_modules:
+                    self.rmv_imported_from_modules.remove((new_module_name,new_module_attribute))
+            else:
+                self.add_imported_from_modules.add((new_module_name,new_module_attribute))
+                self.item_to_set[item_text] = ("imported_from_modules",(new_module_name,new_module_attribute))
+
+        dialog.accept()
+        self.adjust_size()
+        self.item_modified()
+
+    def edit_file(self,item,file_name, file_content):
+        file_dialog = QFileDialog(self)
+        file_dialog.setFileMode(QFileDialog.FileMode.ExistingFile)
+        file_dialog.setNameFilter("Python Files (*.py)")
+        file_dialog.setViewMode(QFileDialog.ViewMode.List)
+        if file_dialog.exec():
+            file_paths = file_dialog.selectedFiles()
+            if file_paths:
+
+                org_contents = [c for n,c in self.org_imported_file_modules]
+                add_contents = [c for n,c in self.add_imported_file_modules]
+                rmv_contents = [c for n,c in self.rmv_imported_file_modules]
+
+                if file_content in org_contents:
+                    self.rmv_imported_file_modules.add((file_name,file_content))
+                else:
+                    if file_content in add_contents:
+                        self.add_imported_file_modules = set((n,c) for n,c in self.add_imported_file_modules if not c == file_content)
+
+
+                file_path = file_paths[0]
+                with open(file_path, 'r') as file:
+                    new_file_content = file.read()
+                new_file_name = os.path.basename(file_path)
+
+                item_text = f"File: {new_file_name}"
+                item.setText(item_text)
+
+                if new_file_content in org_contents:
+                    if new_file_content in rmv_contents:
+                        self.rmv_imported_file_modules = set((n,c) for n,c in self.rmv_imported_file_modules if not c == file_content)
+                else:
+                    self.add_imported_file_modules.add((new_file_name,new_file_content))
+                    self.item_to_set[item_text] = ("imported_file_modules",(new_file_name,new_file_content))
+
+                self.adjust_size()
+                self.item_modified()
+
+    def export_file(self, file_content):
+        file_dialog = QFileDialog(self)
+        file_path, _ = file_dialog.getSaveFileName(self, "Export File", "", "Python Files (*.py);;All Files (*)")
+        if file_path:
+            with open(file_path, 'w') as file:
+                file.write(file_content)
+
+    # ---------- Apply ----------
+
+    def item_modified(self):
+        active = False
+        active |= len(self.add_imported_modules)>0
+        active |= len(self.add_imported_from_modules)>0
+        active |= len(self.add_imported_file_modules)>0
+        active |= len(self.rmv_imported_modules)>0
+        active |= len(self.rmv_imported_from_modules)>0
+        active |= len(self.rmv_imported_file_modules)>0
+        self.apply_button.setEnabled(active)
+
+    def apply_changes(self):
+
+        if self.tpl_index is None:
+            for tpl_index in range(len(self.tpl_project)):
+                self.tpl_project.update_modules(tpl_index,self.add_imported_modules,self.rmv_imported_modules)
+                self.tpl_project.update_from_modules(tpl_index,self.add_imported_from_modules,self.rmv_imported_from_modules)
+                self.tpl_project.update_file_modules(tpl_index,self.add_imported_file_modules,self.rmv_imported_file_modules)
+            self.tpl_project.save_modules()
+        else:
+            self.tpl_project.update_modules(self.tpl_index,self.add_imported_modules,self.rmv_imported_modules)
+            self.tpl_project.update_from_modules(self.tpl_index,self.add_imported_from_modules,self.rmv_imported_from_modules)
+            self.tpl_project.update_file_modules(self.tpl_index,self.add_imported_file_modules,self.rmv_imported_file_modules)
+            self.tpl_project.save_modules(self.tpl_index)
+        
+        self.close()
+
+    # ---------- Operational ----------
+
+    def open_import_menu(self):
+        menu = QMenu(self)
+        add_module_action = menu.addAction("Add Module")
+        add_module_action.triggered.connect(self.add_module)
+
+        add_from_module_action = menu.addAction("Add From Module")
+        add_from_module_action.triggered.connect(self.add_from_module)
+
+        add_file_action = menu.addAction("Add File")
+        add_file_action.triggered.connect(self.add_file)
+
+        menu.exec(self.mapToGlobal(self.sender().geometry().bottomLeft()))
+
+    def double_click_item(self, item):
+        item_type,item_params = self.item_to_set[item.text()]
+        if item_type == "imported_modules":
+            module_name = item_params
+            self.edit_module(item,module_name)
+        if item_type == "imported_from_modules":
+            module_name, attribute = item_params
+            self.edit_from_module(item,module_name,attribute)
+        if item_type == "imported_file_modules":
+            file_name, file_content = item_params
+
+            menu = QMenu(self)
+            import_action = menu.addAction("Replace")
+            import_action.triggered.connect(lambda: self.edit_file(item, file_name, file_content))
+
+            export_action = menu.addAction("Export")
+            export_action.triggered.connect(lambda: self.export_file(file_content))
+
+            menu.exec(QCursor.pos())
+
+    def key_press_event(self, event):
+        if event.key() == Qt.Key.Key_Delete:
+            self.remove_selected()
+        elif event.key() == Qt.Key.Key_Space:
+            current_item = self.list_widget.currentItem()
+            if current_item:
+                self.double_click_item(current_item)
+        elif event.key() == Qt.Key.Key_Escape:
+            self.list_widget.clearSelection()
+        elif event.key() == Qt.Key.Key_Enter or event.key() == Qt.Key.Key_Return:
+            self.apply_changes()
 
 class TplModel(QAbstractTableModel):
     def __init__(self,parent,tpl_project, tpl_index):
@@ -511,7 +684,7 @@ class TplModel(QAbstractTableModel):
         self.tpl_index = tpl_index
 
         while not self.tpl_project.loaded(self.tpl_index):
-            sleep(.01)
+            sleep(.1)
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
         if role in (Qt.ItemDataRole.DisplayRole,Qt.ItemDataRole.EditRole):
@@ -600,6 +773,7 @@ class PopupMessage(QDialog):
         self.setWindowModality(Qt.WindowModality.ApplicationModal)
 
         self.setWindowTitle(application_name + " - Message")
+        self.setWindowIcon(QIcon(resource_path("assets\\icons\\icon.png")))
 
         layout = QVBoxLayout()
 
@@ -647,13 +821,16 @@ class TplTableView(QTableView):
         else:
             return super().mousePressEvent(event)
 
+    def show_popup_message(self, message):
+        window = PopupMessage(self.parent, message)
+        window.exec()
+
     def keyPressEvent(self, event):
         if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
             if event.key() == Qt.Key.Key_S:
                 self.model().save_data()
                 event.accept()
-                window = PopupMessage(self,"Dataframe saved.")
-                window.show()
+                QTimer.singleShot(0, lambda: self.show_popup_message("Dataframe saved."))
                 return
             elif event.key() == Qt.Key.Key_Enter or event.key() == Qt.Key.Key_Return:
                 self.parent.render_all_push_button_on_clicked()
@@ -889,6 +1066,13 @@ class MainWindow(QWidget):
         self.directory_path = ""
         self.output_directory_path = ""
 
+        self.directory_watcher = QFileSystemWatcher()
+        self.directory_watcher.directoryChanged.connect(self.file_watcher_on_directory_change)
+
+        self.debounce_timer = QTimer(self)
+        self.debounce_timer.setSingleShot(True)
+        self.debounce_timer.timeout.connect(self.debounce_timer_one_time_expiry)
+
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)
         self.layout.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -928,16 +1112,10 @@ class MainWindow(QWidget):
 
         self.layout.addWidget(output_directory_h_layout_widget)
 
-
         buttons_h_layout_widget = QWidget()
         buttons_h_layout = QHBoxLayout(buttons_h_layout_widget)
         buttons_h_layout.setSpacing(5)
         buttons_h_layout.setContentsMargins(1, 5, 1, 5)
-
-        self.update_push_button = QPushButton("Reload")
-        self.update_push_button.setFixedWidth(100)
-        self.update_push_button.clicked.connect(self.update_push_button_on_clicked)
-        buttons_h_layout.addWidget(self.update_push_button)
 
         self.render_all_push_button = QPushButton("Render All")
         self.render_all_push_button.clicked.connect(self.render_all_push_button_on_clicked)
@@ -965,8 +1143,6 @@ class MainWindow(QWidget):
         self.scroll_area_render_button_list = []
         self.scroll_area_script_table_list = []
         self.opened_script_index = 0
-
-        self.screen_geometry = QGuiApplication.primaryScreen().geometry()
 
         self.directory_path = ""
         self.output_directory_path = ""
@@ -1056,14 +1232,35 @@ class MainWindow(QWidget):
         window.show()
         return
 
-    def update_push_button_on_clicked(self,path):
-        if self.tpl_project is None:
-            window = PopupMessage(self,"No project selected.")
-            window.show()
-            return
+    def file_watcher_on_directory_change(self,path):
+        self.debounce_timer.start(25)
+
+    def debounce_timer_one_time_expiry(self):
+
+        not_hidden = not self.scroll_area_script_table_list[self.opened_script_index].isHidden()
+        name = self.tpl_project.name(self.opened_script_index)
+        
         self.tpl_project.update()
         self.resize_scroll_area_to_fit_tpl_list()
         self.list_tpl_names_on_scroll_list_labels()
+
+        self.opened_script_index = 0
+        
+        if not_hidden:
+            for i in range(len(self.tpl_project)):
+                if self.tpl_project.name(i) == name:
+
+                    if self.tpl_project.load_failed(i):
+                        return
+
+                    self.opened_script_index = i
+
+                    table_view = self.scroll_area_script_table_list[i]
+                    table_model = table_view.model()
+                    table_view.setHidden(False)
+                    table_model.emit_data_change()
+
+                    break
 
     def render_button_on_clicked(self, index):
         if self.tpl_project.row_count(index) == 0:
@@ -1089,6 +1286,10 @@ class MainWindow(QWidget):
 
         directory_path = os.path.abspath(directory_path)
         cacher["MainWindow:default_project_dir"] = directory_path
+
+        if self.directory_path:
+            self.directory_watcher.removePath(self.directory_path)
+        self.directory_watcher.addPath(directory_path)
 
         self.directory_path = directory_path
         self.directory_path_hash = hashlib.sha256(directory_path.encode()).hexdigest()[:16]
@@ -1233,12 +1434,10 @@ class MainWindow(QWidget):
 
             self.scroll_list_layout.addLayout(entry_vbox_layout)
 
-
     def list_tpl_names_on_scroll_list_labels(self):
-        dlen = len(self.tpl_project)
-
         max_lable_width = 0
-        for i in range(dlen):
+        for i in range(len(self.tpl_project)):
+
             self.scroll_area_label_list[i].setText(self.tpl_project.name(i))
 
             if self.tpl_project.load_failed(i):
@@ -1255,8 +1454,7 @@ class MainWindow(QWidget):
         self.adjust_size()
 
     def color_tpl_names_on_scroll_list_labels(self):
-        dlen = len(self.tpl_project)
-        for i in range(dlen):
+        for i in range(len(self.tpl_project)):
             if self.tpl_project.load_failed(i):
                 self.scroll_area_label_list[i].setStyleSheet('color: #FF3333;')
             elif self.tpl_project.render_failed(i):
@@ -1278,13 +1476,20 @@ class MainWindow(QWidget):
         for i in range(dlen):
             max_lable_width = max(max_lable_width, self.scroll_area_label_list[i].sizeHint().width())
 
-        total_height = 30 * dlen + 145 + (self.scroll_area_script_table_list[self.opened_script_index].height()+5 if not self.scroll_area_script_table_list[self.opened_script_index].isHidden() else 0)
         total_width = max(max_lable_width + 210,self.scroll_area_script_table_list[self.opened_script_index].sizeHint().width()+7 if not self.scroll_area_script_table_list[self.opened_script_index].isHidden() else 0)
+        total_height = 30 * dlen + 145 + (self.scroll_area_script_table_list[self.opened_script_index].height()+5 if not self.scroll_area_script_table_list[self.opened_script_index].isHidden() else 0)
 
-        total_height = max(total_height,self.height())
         total_width = max(total_width,self.width())
+        total_height = max(total_height,self.height())
 
-        total_height = min(total_height,self.screen_geometry.height()-100)
-        total_width = min(total_width,self.screen_geometry.width())
+        current_screen = QApplication.screenAt(self.geometry().center())
+
+        if current_screen:
+            available_geometry = current_screen.availableGeometry()
+        else:
+            available_geometry = QApplication.primaryScreen().availableGeometry()
+
+        total_width = min(total_width,available_geometry.width()-75)
+        total_height = min(total_height,available_geometry.height()-100)
 
         self.resize(total_width, total_height)

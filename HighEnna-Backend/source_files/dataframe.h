@@ -481,6 +481,7 @@ public:
 				node = node->next;
 				delete to_delete;
 			}
+			
 			head = nullptr;
 			tail = nullptr;
 			

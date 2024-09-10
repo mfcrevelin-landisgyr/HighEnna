@@ -1,5 +1,5 @@
 #define MyAppName "HighEnna"
-#define MyAppVersion "1.0.1"
+#define MyAppVersion "1.2.0"
 #define MyAppPublisher "Landis+Gyr, Inc."
 #define MyAppExeName "HighEnna.exe"
 
@@ -13,7 +13,7 @@ DefaultDirName={autopf}\{#MyAppName}
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 DisableProgramGroupPage=yes
-LicenseFile=..\LICENSE.txt
+; LicenseFile=..\LICENSE.txt
 ; Uncomment the following line to run in non administrative install mode (install for current user only.)
 ;PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog

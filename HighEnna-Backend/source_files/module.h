@@ -158,6 +158,13 @@ PYBIND11_MODULE(tplbackend, m) {
                 Returns:
                     str: The log of the template.
              )pbdoc")
+        .def("clear_log", &TplProject::clear_log,
+             pybind11::arg("index"),
+             R"pbdoc(
+                Clears the log for the specified template.
+                Args:
+                    index (int): The index of the template to clear the log of.
+             )pbdoc")
         .def("vars", &TplProject::vars,
              pybind11::arg("index"),
              R"pbdoc(

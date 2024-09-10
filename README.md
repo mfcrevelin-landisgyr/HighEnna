@@ -1,4 +1,4 @@
-![](HighEnna-Graphical/source_files/assets/icons/icon.png)
+<img src="HighEnna-Graphical/source_files/assets/icons/icon.png" alt="Image" width="300">
 
 # High Enna
 
@@ -8,7 +8,7 @@ High Enna is a text processor designed to work with code files. It identifies sp
 
 ### Prerequisites
 
-To build and run High Enna, you'll need the following software:
+To build High Enna, you'll need the following software:
 
 - Visual Studio (for building the backend)
 - Inno Setup Compiler (for creating the installer)
@@ -19,7 +19,7 @@ To build and run High Enna, you'll need the following software:
 1. **Setup Visual Studio Project**:
     - Navigate to `HighEnna-Backend`.
     - Run `make_visual_studio_project.bat` to set up the Visual Studio compilation scheme. This will create a `VS` directory inside `HighEnna-Backend`.
-   		- This project, as is, links against Python 3.9 libraries. Before creating the Visual Studio project, make sure to either install Python 3.9 with debugging options and set it to be the first Python version in your `PATH` or, if you want to link agains libs of a different version of Python, edit the following lines in `CMakeLists.txt` under `HighEnna-Backend` to link against the correct Python libraries:
+   		- This project, as is, links against Python 3.9 libraries. Before creating the Visual Studio project, make sure to either install Python 3.9 with debugging options on your computer and set it to be the first Python version in your `PATH` enviroment variable or, if you want to link agains libs of a different version of Python, edit the following lines in `CMakeLists.txt` under `HighEnna-Backend` to link against them:
       		```cmake
       		set(DPYTHON_LIBRARY_RELEASE "C:/Program Files/Python39/libs/python39.lib")
       		set(DPYTHON_LIBRARY_DEBUG "C:/Program Files/Python39/libs/python39_d.lib")
@@ -58,6 +58,24 @@ To build and run High Enna, you'll need the following software:
 
 ### Debugging
 
-- Producing the installer is not required for debugging.
-- After following the steps to build the graphical executable, you can run it directly from `HighEnna-Graphical/build/HighEnna.exe`.
+- Generating the installer is not required for debugging.
+    - After following the steps to build `tplbackend.pyd` and copying it to `HighEnna-Graphical/source_files`, you can run it directly from `HighEnna-Graphical/source_files` by opening a terminal in that directory and using the command:
+      ```shell
+      python .\main.py
+      ```
+      or
+    - After following the steps to build the executable, you can run it directly from `HighEnna-Graphical/build/HighEnna.exe`.
 
+## Acknowledgements
+
+This software makes use of the pybind11 library from Wenzel Jakob and contributors which is licensed under a BSD-style license.  
+Copyright (c) 2016 Wenzel Jakob  
+https://github.com/pybind/pybind11/blob/master/LICENSE
+
+This software makes use of the json class from Niels Lohmann which is licensed under the MIT License.  
+Copyright © 2013-2022 Niels Lohmann  
+https://json.nlohmann.me/home/license/
+
+This software makes use of the Qt6 framework from Qt Company Ltd. and contributors which is licensed under the GNU LGPL License.  
+Copyright (C) 2018 Qt Company Ltd.  
+https://doc.qt.io/qt-6/lgpl.html
