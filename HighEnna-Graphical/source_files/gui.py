@@ -1,3 +1,9 @@
+# Permitir reordenar colunas
+# Permitir Salvar todos
+# Permitir Editação silmultanea
+# Reformular executor python
+# Reformular painel de modulos
+
 from PyQt6.QtWidgets import *
 from PyQt6.QtCore import *
 from PyQt6.QtGui import *
@@ -24,7 +30,7 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 application_name = "High Enna"
-version = "1.2.0"
+version = "2.0.0"
 
 class Cacher:
     def __init__(self, app_name):
@@ -104,6 +110,9 @@ class ProgressBarWindow(QMainWindow):
             progress = int((float(current) / float(total)) * 100.0)
             self.progress_bar.setValue(progress)
             self.status_label.setText(f"Rendering: {progress}%")
+
+            if progress >= 100:
+                QTimer.singleShot(250, self.close)
         else:
             self.progress_bar.setValue(0)
             self.status_label.setText("Waiting for data...")
@@ -125,7 +134,7 @@ class TplLogMessageBox(QMainWindow):
         self.tpl_index = tpl_index
 
         self.name = parent.tpl_project.name(tpl_index)
-        if not cacher[f"TplLogMessageBox:default_save_dir:{self.name}"]:
+        if not cacher[f"TplLogMessageBox:default_save_dir:{self.name}"] or not os.path.isdir(cacher[f"TplLogMessageBox:default_save_dir:{self.name}"]):
             cacher[f"TplLogMessageBox:default_save_dir:{self.name}"] = os.path.dirname(parent.tpl_project.path(tpl_index))
 
         lines = self.message.splitlines()
@@ -1150,7 +1159,7 @@ class MainWindow(QWidget):
         self.tpl_project = None
 
         default_project_dir = cacher["MainWindow:default_project_dir"]
-        if default_project_dir:
+        if default_project_dir and os.path.isdir(default_project_dir):
             self.set_directory(default_project_dir)
 
     # --- EVENT HANDLERS --------------------------------------------------------------------------------
@@ -1357,6 +1366,17 @@ class MainWindow(QWidget):
                                                 double_nested_widget = double_nested_item.widget()
                                                 if double_nested_widget:
                                                     double_nested_widget.deleteLater()
+        def clear_layout(layout):
+            while layout.count():
+                item = layout.takeAt(0)
+                widget = item.widget()
+                if widget:
+                    widget.deleteLater()
+                else:
+                    nested_layout = item.layout()
+                    if nested_layout:
+                        clear_layout(nested_layout)
+        clear_layout(self.scroll_list_layout)
 
         # Rebuild the layout based on the current self.tpl_project size
         self.scroll_area_label_list.clear()
