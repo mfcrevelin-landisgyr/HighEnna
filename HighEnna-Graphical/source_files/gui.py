@@ -3,6 +3,7 @@
 # Permitir Editação silmultanea
 # Reformular executor python
 # Reformular painel de modulos
+# * Corrigir Edição Preta
 
 from PyQt6.QtWidgets import *
 from PyQt6.QtCore import *
@@ -86,16 +87,17 @@ class ProgressBarWindow(QMainWindow):
         self.layout.addWidget(self.status_label)
 
         self.progress_bar.setTextVisible(False)
-        self.progress_bar.setStyleSheet("""
-            QProgressBar {
+        highlight_color = self.palette().color(QPalette.ColorRole.Highlight).name()
+        self.progress_bar.setStyleSheet(f"""
+            QProgressBar {{
                 border: 2px solid #444;
                 border-radius: 5px;
                 text-align: center;
-            }
-            QProgressBar::chunk {
-                background-color: #4CAF50;
+            }}
+            QProgressBar::chunk {{
+                background-color: {highlight_color};
                 width: 10px;
-            }
+            }}
         """)
 
         self.timer = QTimer()
@@ -112,7 +114,7 @@ class ProgressBarWindow(QMainWindow):
             self.status_label.setText(f"Rendering: {progress}%")
 
             if progress >= 100:
-                QTimer.singleShot(250, self.close)
+                QTimer.singleShot(500, self.close)
         else:
             self.progress_bar.setValue(0)
             self.status_label.setText("Waiting for data...")
@@ -685,6 +687,36 @@ class ModuleListWindow(QMainWindow):
         elif event.key() == Qt.Key.Key_Enter or event.key() == Qt.Key.Key_Return:
             self.apply_changes()
 
+class PopupMessage(QDialog):
+
+    def __init__(self, parent, message):
+        super().__init__(parent)
+        self.setWindowModality(Qt.WindowModality.ApplicationModal)
+
+        self.setWindowTitle(application_name + " - Message")
+        self.setWindowIcon(QIcon(resource_path("assets\\icons\\icon.png")))
+
+        layout = QVBoxLayout()
+
+        message_label_layout = QHBoxLayout()
+        message_label_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        message_label = QLabel(message)
+        message_label.setWordWrap(True)
+        message_label_layout.addWidget(message_label)
+
+        button_layout = QHBoxLayout()
+        button_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ok_button = QPushButton("OK")
+        ok_button.clicked.connect(self.accept)
+        button_layout.addWidget(ok_button)
+
+        layout.addLayout(message_label_layout)
+        layout.addLayout(button_layout)
+
+        self.setLayout(layout)
+
+        self.setMinimumSize(200, 80)
+
 class TplModel(QAbstractTableModel):
     def __init__(self,parent,tpl_project, tpl_index):
         super().__init__(parent)
@@ -741,7 +773,7 @@ class TplModel(QAbstractTableModel):
                 l = self.tpl_project.vars(self.tpl_index)
                 if (section >= len(l)):
                     return ""
-                return self.tpl_project.vars(self.tpl_index)[section]
+                return l[section]
             else:
                 return str(section + 1)
 
@@ -775,35 +807,22 @@ class TplModel(QAbstractTableModel):
             return Qt.ItemFlag.NoItemFlags
         return Qt.ItemFlag.ItemIsEditable | Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
 
-class PopupMessage(QDialog):
-
-    def __init__(self, parent, message):
+class TplDelegate(QStyledItemDelegate):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowModality(Qt.WindowModality.ApplicationModal)
 
-        self.setWindowTitle(application_name + " - Message")
-        self.setWindowIcon(QIcon(resource_path("assets\\icons\\icon.png")))
+    def createEditor(self, parent, option, index):
+        editor = QLineEdit(parent)
+        if self.is_dark_theme():
+            editor.setStyleSheet("background-color: black; color: white;")
+        else:
+            editor.setStyleSheet("background-color: white; color: black;")
 
-        layout = QVBoxLayout()
+        return editor
 
-        message_label_layout = QHBoxLayout()
-        message_label_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        message_label = QLabel(message)
-        message_label.setWordWrap(True)
-        message_label_layout.addWidget(message_label)
-
-        button_layout = QHBoxLayout()
-        button_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        ok_button = QPushButton("OK")
-        ok_button.clicked.connect(self.accept)
-        button_layout.addWidget(ok_button)
-
-        layout.addLayout(message_label_layout)
-        layout.addLayout(button_layout)
-
-        self.setLayout(layout)
-
-        self.setMinimumSize(200, 80)
+    def is_dark_theme(self):
+        palette = QApplication.instance().palette()
+        return palette.color(QPalette.ColorRole.Window).value() < 128
 
 class TplTableView(QTableView):
 
@@ -812,6 +831,7 @@ class TplTableView(QTableView):
         self.parent = parent
         self.setMouseTracking(True)
         self.editing = False
+        self.setItemDelegate(TplDelegate(self))
 
     def event(self, event):
         if event.type() == QEvent.Type.HoverEnter:
@@ -958,7 +978,7 @@ class TplTableView(QTableView):
         elif action == duplicate_action:
             self.model().duplicateRows(rows)
         elif action == render_action:
-            if self.tpl_project.row_count(index) == 0:
+            if self.parent.tpl_project.row_count(self.model().tpl_index) == 0:
                 window = PopupMessage(self,"No data to render.")
                 window.show()
                 return
@@ -1335,37 +1355,7 @@ class MainWindow(QWidget):
 
     def resize_scroll_area_to_fit_tpl_list(self):
         # Clear the existing layout items
-        while self.scroll_list_layout.count():
-            item = self.scroll_list_layout.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
-            else:
-                layout = item.layout()
-                if layout:
-                    # Recursively clear the nested layout
-                    while layout.count():
-                        nested_item = layout.takeAt(0)
-                        nested_widget = nested_item.widget()
-                        if nested_widget:
-                            nested_widget.deleteLater()
-                        else:
-                            nested_layout = nested_item.layout()
-                            if nested_layout:
-                                while nested_layout.count():
-                                    nested_nested_item = nested_layout.takeAt(0)
-                                    nested_nested_widget = nested_nested_item.widget()
-                                    if nested_nested_widget:
-                                        nested_nested_widget.deleteLater()
-                                    else:
-                                        # Nested layouts within layouts (if any)
-                                        nested_nested_layout = nested_nested_item.layout()
-                                        if nested_nested_layout:
-                                            while nested_nested_layout.count():
-                                                double_nested_item = nested_nested_layout.takeAt(0)
-                                                double_nested_widget = double_nested_item.widget()
-                                                if double_nested_widget:
-                                                    double_nested_widget.deleteLater()
+
         def clear_layout(layout):
             while layout.count():
                 item = layout.takeAt(0)
