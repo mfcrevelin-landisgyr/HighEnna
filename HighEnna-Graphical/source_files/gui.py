@@ -1503,3 +1503,16 @@ class MainWindow(QWidget):
         total_height = min(total_height,available_geometry.height()-100)
 
         self.resize(total_width, total_height)
+
+    def show_popup_message(self, message):
+        window = PopupMessage(self, message)
+        window.exec()
+
+    def keyPressEvent(self, event: QKeyEvent):
+        if event.modifiers() == (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier) and event.key() == Qt.Key.Key_S:
+            for table_view in self.scroll_area_script_table_list:
+                table_view.model().save_data()
+            event.accept()
+            QTimer.singleShot(0, lambda: self.show_popup_message("All dataframes saved."))
+            return
+        super().keyPressEvent(event)
