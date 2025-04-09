@@ -6,12 +6,14 @@ from tplbackend import TplProject
 
 from appdirs import user_cache_dir
 from collections import deque
+from io import StringIO
 from time import sleep
+
 import hashlib
 import json
 import sys
+import csv
 import os
-
 
 #https://stackoverflow.com/questions/31836104/pyinstaller-and-onefile-how-to-include-an-image-in-the-exe-file
 def resource_path(relative_path):
@@ -24,7 +26,7 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 application_name = "High Enna"
-version = "1.2.0"
+version = "1.3.0"
 
 class Cacher:
     def __init__(self, app_name):
@@ -79,17 +81,19 @@ class ProgressBarWindow(QMainWindow):
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.layout.addWidget(self.status_label)
 
+        highlight_color = QApplication.instance().palette().color(QPalette.ColorRole.Highlight).name()
+
         self.progress_bar.setTextVisible(False)
-        self.progress_bar.setStyleSheet("""
-            QProgressBar {
+        self.progress_bar.setStyleSheet(f"""
+            QProgressBar {{
                 border: 2px solid #444;
                 border-radius: 5px;
                 text-align: center;
-            }
-            QProgressBar::chunk {
-                background-color: #4CAF50;
+            }}
+            QProgressBar::chunk {{
+                background-color: {highlight_color};
                 width: 10px;
-            }
+            }}
         """)
 
         self.timer = QTimer()
@@ -216,7 +220,6 @@ class TplLogMessageBox(QMainWindow):
                 cacher[f"TplLogMessageBox:default_save_dir:{self.name}"] = os.path.dirname(file_path)
                 with open(file_path, "w") as f:
                     f.write(self.message)
-                self.close()
         except Exception as e:
             QMessageBox.critical(self,"",traceback.format_exc())
 
@@ -676,12 +679,68 @@ class ModuleListWindow(QMainWindow):
         elif event.key() == Qt.Key.Key_Enter or event.key() == Qt.Key.Key_Return:
             self.apply_changes()
 
+class PopupMessage(QDialog):
+
+    def __init__(self, parent, message, yes_no=False):
+        super().__init__(parent)
+        self.setWindowModality(Qt.WindowModality.ApplicationModal)
+
+        self.setWindowTitle(application_name + " - Message")
+        self.setWindowIcon(QIcon(resource_path("assets\\icons\\icon.png")))
+
+        self.user_response = False  # Default to No/False
+
+        layout = QVBoxLayout()
+
+        message_label_layout = QHBoxLayout()
+        message_label_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        message_label = QLabel(message)
+        message_label.setWordWrap(True)
+        message_label_layout.addWidget(message_label)
+
+        button_layout = QHBoxLayout()
+        button_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        if yes_no:
+            yes_button = QPushButton("Yes")
+            no_button = QPushButton("No")
+
+            yes_button.clicked.connect(self.on_yes)
+            no_button.clicked.connect(self.reject)
+
+            button_layout.addWidget(yes_button)
+            button_layout.addWidget(no_button)
+        else:
+            ok_button = QPushButton("OK")
+            ok_button.clicked.connect(self.accept)
+            button_layout.addWidget(ok_button)
+
+        layout.addLayout(message_label_layout)
+        layout.addLayout(button_layout)
+
+        self.setLayout(layout)
+        self.setMinimumSize(200, 80)
+
+    def on_yes(self):
+        self.user_response = True
+        self.accept()
+
+def show_popup_message(widget,message):
+    window = PopupMessage(widget, message)
+    window.exec()
+
+def ask_popup_message(widget, message) -> bool:
+    window = PopupMessage(widget, message, yes_no=True)
+    window.exec()
+    return window.user_response
+
 class TplModel(QAbstractTableModel):
     def __init__(self,parent,tpl_project, tpl_index):
         super().__init__(parent)
         self.parent = parent
         self.tpl_project = tpl_project
         self.tpl_index = tpl_index
+        self.modified = 0
 
         while not self.tpl_project.loaded(self.tpl_index):
             sleep(.1)
@@ -695,6 +754,8 @@ class TplModel(QAbstractTableModel):
             return False
 
         self.tpl_project.set_cell(self.tpl_index,index.row(), index.column(),str(value))
+        self.modified+=1
+        self.parent.parent.update_tpl_name_on_scroll_list_label(self.tpl_index)
         self.emit_data_change()
         return True
 
@@ -702,12 +763,16 @@ class TplModel(QAbstractTableModel):
         self.beginResetModel()
         self.tpl_project.undo(self.tpl_index)
         self.endResetModel()
+        self.modified-=1
+        self.parent.parent.update_tpl_name_on_scroll_list_label(self.tpl_index)
         self.emit_data_change()
 
     def redo(self):
         self.beginResetModel()
         self.tpl_project.redo(self.tpl_index)
         self.endResetModel()
+        self.modified+=1
+        self.parent.parent.update_tpl_name_on_scroll_list_label(self.tpl_index)
         self.emit_data_change()
 
     def clear(self,indices):
@@ -715,10 +780,14 @@ class TplModel(QAbstractTableModel):
         self.beginResetModel()
         self.tpl_project.clear_dataframe_indices(self.tpl_index,formated_indices)
         self.endResetModel()
+        self.modified+=1
+        self.parent.parent.update_tpl_name_on_scroll_list_label(self.tpl_index)
         self.emit_data_change()
 
     def save_data(self):
         self.tpl_project.save_data(self.tpl_index)
+        self.modified=0
+        self.parent.parent.update_tpl_name_on_scroll_list_label(self.tpl_index)
 
     def rowCount(self, parent=QModelIndex()):
         return self.tpl_project.row_count(self.tpl_index)
@@ -743,18 +812,24 @@ class TplModel(QAbstractTableModel):
         else:
             self.tpl_project.insert_rows(self.tpl_index,len(rows))
         self.endResetModel()
+        self.modified+=1
+        self.parent.parent.update_tpl_name_on_scroll_list_label(self.tpl_index)
         self.emit_data_change()
 
     def removeRows(self, rows):
         self.beginResetModel()
         self.tpl_project.remove_rows(self.tpl_index,rows)
         self.endResetModel()
+        self.modified+=1
+        self.parent.parent.update_tpl_name_on_scroll_list_label(self.tpl_index)
         self.emit_data_change()
 
     def duplicateRows(self, rows):
         self.beginResetModel()
         self.tpl_project.duplicate_rows(self.tpl_index,rows)
         self.endResetModel()
+        self.modified+=1
+        self.parent.parent.update_tpl_name_on_scroll_list_label(self.tpl_index)
         self.emit_data_change()
 
     def emit_data_change(self):
@@ -766,36 +841,6 @@ class TplModel(QAbstractTableModel):
             return Qt.ItemFlag.NoItemFlags
         return Qt.ItemFlag.ItemIsEditable | Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
 
-class PopupMessage(QDialog):
-
-    def __init__(self, parent, message):
-        super().__init__(parent)
-        self.setWindowModality(Qt.WindowModality.ApplicationModal)
-
-        self.setWindowTitle(application_name + " - Message")
-        self.setWindowIcon(QIcon(resource_path("assets\\icons\\icon.png")))
-
-        layout = QVBoxLayout()
-
-        message_label_layout = QHBoxLayout()
-        message_label_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        message_label = QLabel(message)
-        message_label.setWordWrap(True)
-        message_label_layout.addWidget(message_label)
-
-        button_layout = QHBoxLayout()
-        button_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        ok_button = QPushButton("OK")
-        ok_button.clicked.connect(self.accept)
-        button_layout.addWidget(ok_button)
-
-        layout.addLayout(message_label_layout)
-        layout.addLayout(button_layout)
-
-        self.setLayout(layout)
-
-        self.setMinimumSize(200, 80)
-
 class TplTableView(QTableView):
 
     def __init__(self,parent=None):
@@ -803,6 +848,11 @@ class TplTableView(QTableView):
         self.parent = parent
         self.setMouseTracking(True)
         self.editing = False
+        self.just_saved=False
+        self.horizontalHeader().setSectionsMovable(True)
+        self.horizontalHeader().sectionMoved.connect(self.on_column_moved)
+        self.apply_dynamic_stylesheet()
+        QApplication.instance().paletteChanged.connect(self.apply_dynamic_stylesheet)
 
     def event(self, event):
         if event.type() == QEvent.Type.HoverEnter:
@@ -821,21 +871,9 @@ class TplTableView(QTableView):
         else:
             return super().mousePressEvent(event)
 
-    def show_popup_message(self, message):
-        window = PopupMessage(self.parent, message)
-        window.exec()
-
     def keyPressEvent(self, event):
         if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
-            if event.key() == Qt.Key.Key_S:
-                self.model().save_data()
-                event.accept()
-                QTimer.singleShot(0, lambda: self.show_popup_message("Dataframe saved."))
-                return
-            elif event.key() == Qt.Key.Key_Enter or event.key() == Qt.Key.Key_Return:
-                self.parent.render_all_push_button_on_clicked()
-                return
-            elif event.key() == Qt.Key.Key_Z:
+            if event.key() == Qt.Key.Key_Z:
                 self.model().undo()
                 event.accept()
                 return
@@ -852,10 +890,6 @@ class TplTableView(QTableView):
                 event.accept()
                 return
         elif event.key() == Qt.Key.Key_Delete:
-            self.model().clear(self.selectedIndexes())
-            event.accept()
-            return
-        elif event.key() == Qt.Key.Key_Escape:
             self.model().clear(self.selectedIndexes())
             event.accept()
             return
@@ -879,7 +913,30 @@ class TplTableView(QTableView):
     def setModel(self, model):
         super().setModel(model)
         model.dataChanged.connect(self.fit_to_dataframe)
+
+        saved_order = cacher[f"ColumnOrder:{self.parent.tpl_project.path(self.model().tpl_index)}"]
+        if saved_order:
+            header = self.horizontalHeader()
+            for visual_pos, logical_index in enumerate(saved_order):
+                current_visual_index = header.visualIndex(logical_index)
+                if current_visual_index != visual_pos:
+                    header.moveSection(current_visual_index, visual_pos)
+
         self.fit_to_dataframe()
+
+    def apply_dynamic_stylesheet(self):
+        base_color = QApplication.instance().palette().color(QPalette.ColorRole.Base)
+
+        if base_color.lightness() < 128:
+            edit_bg_color = "black"
+        else:
+            edit_bg_color = "white"
+
+        self.setStyleSheet(f"""
+            QTableView QLineEdit {{
+                background-color: {edit_bg_color};
+            }}
+        """)
 
     def fit_to_dataframe(self):
         self.resizeColumnsToContents()
@@ -904,6 +961,12 @@ class TplTableView(QTableView):
         total_height += self.verticalHeader().sizeHint().height()
 
         return QSize(total_width, total_height)
+
+    def on_column_moved(self, logicalIndex, oldVisualIndex, newVisualIndex):
+        column_count = self.model().columnCount()
+        key = f"ColumnOrder:{self.parent.tpl_project.path(self.model().tpl_index)}"
+        mapping = [self.horizontalHeader().logicalIndex(i) for i in range(column_count)]
+        cacher[key] = mapping
 
     def createContextMenu(self, position, index_at):
         menu = QMenu()
@@ -949,7 +1012,7 @@ class TplTableView(QTableView):
         elif action == duplicate_action:
             self.model().duplicateRows(rows)
         elif action == render_action:
-            if self.tpl_project.row_count(index) == 0:
+            if self.parent.tpl_project.row_count(index_at.row()) == 0:
                 window = PopupMessage(self,"No data to render.")
                 window.show()
                 return
@@ -978,7 +1041,8 @@ class TplTableView(QTableView):
             for row in sorted(rows.keys()):
                 row_data = []
                 for col in sorted(rows[row].keys()):
-                    row_data.append(rows[row][col])
+                    formated = rows[row][col].replace('"','""')
+                    row_data.append(f'"{formated}"')
                 text_to_copy += "\t".join(row_data) + "\n"
 
             clipboard = QApplication.clipboard()
@@ -994,16 +1058,16 @@ class TplTableView(QTableView):
         if not selected_indexes:
             return
 
-        # Check if only one value is copied
-        rows = text.split("\n")[:-1]
-        if len(rows) == 1 and len(rows[0].split("\t")) == 1:
-            single_value = rows[0]
+        reader = csv.reader(StringIO(text), delimiter='\t', quotechar='"')
+        rows = [row for row in reader]
+
+        if len(rows) == 1 and len(rows[0]) == 1:
+            single_value = rows[0][0]
             cells_to_set = [(index.row(), index.column(), single_value) for index in selected_indexes]
             self.model().tpl_project.set_cells(self.model().tpl_index, cells_to_set)
             self.model().emit_data_change()
             return
 
-        # If there are multiple values, paste as usual starting from the current index
         start_index = self.currentIndex()
         if not start_index.isValid():
             return
@@ -1012,16 +1076,16 @@ class TplTableView(QTableView):
         start_col = start_index.column()
 
         cells_to_set = []
-        for i, row in enumerate(rows):
-            columns = row.split("\t")
-            for j, column in enumerate(columns):
+        for i, columns in enumerate(rows):
+            for j, value in enumerate(columns):
                 target_row = start_row + i
                 target_col = start_col + j
                 model_index = self.model().index(target_row, target_col)
                 if model_index.isValid():
-                    cells_to_set.append((target_row, target_col, column))
+                    cells_to_set.append((target_row, target_col, value))
         self.model().tpl_project.set_cells(self.model().tpl_index, cells_to_set)
         self.model().emit_data_change()
+
 
 class CustomScrollArea(QScrollArea):
     def wheelEvent(self, event: QWheelEvent):
@@ -1071,7 +1135,7 @@ class MainWindow(QWidget):
 
         self.debounce_timer = QTimer(self)
         self.debounce_timer.setSingleShot(True)
-        self.debounce_timer.timeout.connect(self.debounce_timer_one_time_expiry)
+        self.debounce_timer.timeout.connect(self.debounce_timer_on_time_expiry)
 
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)
@@ -1150,8 +1214,10 @@ class MainWindow(QWidget):
         self.tpl_project = None
 
         default_project_dir = cacher["MainWindow:default_project_dir"]
-        if default_project_dir:
+        if default_project_dir and os.path.isdir(default_project_dir):
             self.set_directory(default_project_dir)
+
+        self.force_close = False
 
     # --- EVENT HANDLERS --------------------------------------------------------------------------------
 
@@ -1235,32 +1301,48 @@ class MainWindow(QWidget):
     def file_watcher_on_directory_change(self,path):
         self.debounce_timer.start(25)
 
-    def debounce_timer_one_time_expiry(self):
+    def debounce_timer_on_time_expiry(self):
 
         not_hidden = not self.scroll_area_script_table_list[self.opened_script_index].isHidden()
         name = self.tpl_project.name(self.opened_script_index)
         
-        self.tpl_project.update()
-        self.resize_scroll_area_to_fit_tpl_list()
-        self.list_tpl_names_on_scroll_list_labels()
+        not_just_saved = True
+        for table_view in self.scroll_area_script_table_list:
+            not_just_saved &= not table_view.just_saved
+            table_view.just_saved = False
 
-        self.opened_script_index = 0
-        
-        if not_hidden:
-            for i in range(len(self.tpl_project)):
-                if self.tpl_project.name(i) == name:
+        def reload_from_disk():
+            self.tpl_project.update()
+            self.resize_scroll_area_to_fit_tpl_list()
+            self.list_tpl_names_on_scroll_list_labels()
 
-                    if self.tpl_project.load_failed(i):
-                        return
+            self.opened_script_index = 0
+            
+            if not_hidden:
+                for i in range(len(self.tpl_project)):
+                    if self.tpl_project.name(i) == name:
 
-                    self.opened_script_index = i
+                        if self.tpl_project.load_failed(i):
+                            return
 
-                    table_view = self.scroll_area_script_table_list[i]
-                    table_model = table_view.model()
-                    table_view.setHidden(False)
-                    table_model.emit_data_change()
+                        self.opened_script_index = i
 
-                    break
+                        table_view = self.scroll_area_script_table_list[i]
+                        table_model = table_view.model()
+                        table_view.setHidden(False)
+                        table_model.emit_data_change()
+
+                        break
+
+
+        if not_just_saved:
+            if any(table_view.model().modified!=0 for table_view in self.scroll_area_script_table_list):
+                def ask_then_reload():
+                    if ask_popup_message(self, "Files changed on disk.\n\nReload?"):
+                        reload_from_disk()
+                QTimer.singleShot(0, ask_then_reload)
+            else:
+                reload_from_disk()
 
     def render_button_on_clicked(self, index):
         if self.tpl_project.row_count(index) == 0:
@@ -1435,7 +1517,6 @@ class MainWindow(QWidget):
             self.scroll_list_layout.addLayout(entry_vbox_layout)
 
     def list_tpl_names_on_scroll_list_labels(self):
-        max_lable_width = 0
         for i in range(len(self.tpl_project)):
 
             self.scroll_area_label_list[i].setText(self.tpl_project.name(i))
@@ -1448,10 +1529,12 @@ class MainWindow(QWidget):
                 self.scroll_area_render_button_list[i].setEnabled(False)
             else:
                 self.scroll_area_render_button_list[i].setEnabled(True)
-
-            max_lable_width = max(max_lable_width, self.scroll_area_label_list[i].sizeHint().width())
         self.color_tpl_names_on_scroll_list_labels()
         self.adjust_size()
+
+    def update_tpl_name_on_scroll_list_label(self,tpl_index):
+        prefix = '' if self.scroll_area_script_table_list[tpl_index].model().modified==0 else "● "
+        self.scroll_area_label_list[tpl_index].setText(f"{prefix}{self.tpl_project.name(tpl_index)}")
 
     def color_tpl_names_on_scroll_list_labels(self):
         for i in range(len(self.tpl_project)):
@@ -1493,3 +1576,41 @@ class MainWindow(QWidget):
         total_height = min(total_height,available_geometry.height()-100)
 
         self.resize(total_width, total_height)
+
+
+
+    def keyPressEvent(self, event):
+        if event.modifiers() == (Qt.KeyboardModifier.ControlModifier|Qt.KeyboardModifier.ShiftModifier):
+            if event.key() == Qt.Key.Key_S:
+                for table_view in self.scroll_area_script_table_list:
+                    table_view.just_saved=True
+                    table_view.model().save_data()
+                event.accept()
+                QTimer.singleShot(0, lambda: show_popup_message(self,"All dataframes saved."))
+                return
+            elif event.key() == Qt.Key.Key_R:
+                self.render_all_push_button_on_clicked()
+                return
+        elif event.modifiers() == Qt.KeyboardModifier.ControlModifier and not self.scroll_area_script_table_list[self.opened_script_index].isHidden():
+            if event.key() == Qt.Key.Key_S:
+                table_view = self.scroll_area_script_table_list[self.opened_script_index]
+                table_view.just_saved=True
+                table_view.model().save_data()
+                event.accept()
+                QTimer.singleShot(0, lambda: show_popup_message(self,"Dataframe saved."))
+                return
+            elif event.key() == Qt.Key.Key_R:
+                self.render_button_on_clicked(self.opened_script_index)
+                return
+        super().keyPressEvent(event)
+
+    def closeEvent(self, event):
+        if (not self.force_close) and any(table_view.model().modified!=0 for table_view in self.scroll_area_script_table_list):
+            def ask_then_close():
+                if ask_popup_message(self, "There are unsaved files.\n\nClose anyway?"):
+                    self.force_close = True
+                    self.close()
+            QTimer.singleShot(0, ask_then_close)
+            event.ignore()
+        else:
+            event.accept()
