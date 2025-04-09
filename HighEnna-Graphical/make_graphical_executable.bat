@@ -1,5 +1,7 @@
 @echo off
 
+setlocal
+
 where pyinstaller >nul 2>&1
 if %ERRORLEVEL% neq 0 (
     python -m pip install pyinstaller
@@ -18,4 +20,8 @@ xcopy /E /I /H /Y  .\assets .\dist\assets
 xcopy /E /I /H /Y  .\assets .\dist\assets
 pyinstaller --name HighEnna --onefile --windowed --icon=.\icon.ico main.py
 
-move .\dist\HighEnna.exe .
+if exist .\dist\HighEnna.exe (
+    move .\dist\HighEnna.exe .
+)
+
+endlocal
