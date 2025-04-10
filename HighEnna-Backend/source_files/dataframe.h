@@ -1,544 +1,302 @@
+/*
+
+Add to struct Action:
+	std::list<uint16_t> indices;
+	std::list<uint16_t> names;
+	It may have only that and no more members.
+
+Obs:
+	1. I liked your Idea of hiding what is settled.
+	2. Diferentiate ActionType::AddColMultiple between the indexed and not indexed.
+	3. Do not touch undo and redo yet.
+*/
+
 #ifndef CUSTOM_DATAFRAME_H
 #define CUSTOM_DATAFRAME_H
 
-struct DataFrame
-{
+#include <unordered_set>
+#include <unordered_map>
+#include <vector>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <stack>
+#include <list>
+#include <tuple>
+#include <stdexcept>
+#include <algorithm>
 
-	struct Script {
-		Script(){}
-		Script(const std::unordered_map<std::string,std::string>& primer) : data(primer) {}
-		std::unordered_map<std::string,std::string> data;
-		uint64_t index = 0;
-		Script* prev = nullptr;
-		Script* next = nullptr;
-	};
-
-public:
-
-	DataFrame(){}
-	~DataFrame(){
-		auto node = head;
-		while (node){
-			auto to_delete = node;
-			node = node->next;
-			delete to_delete;
-		}
-	}
-
-public:
-
-	std::unordered_map<std::string, std::string> empty_data;
-
-	Script* head = nullptr; Script* tail = nullptr;
-	std::unordered_map<uint64_t,Script*> index_to_script;
-
-	std::unordered_set<uint64_t> modded_indices;
-
-	std::set<std::string> col_names;
-	std::unordered_map<uint64_t,std::string_view> index_to_column;
-
-	uint64_t num_rows=0, num_cols=0;
-
-public:
-
-	void insert_rows(uint64_t num_new_rows) {
-		if (num_new_rows == 0) return;
-		
-		std::list<Script*> nodes;
-
-		if (!tail){
-			auto new_script = new Script(empty_data);
-			head = new_script;
-			tail = new_script;
-			--num_new_rows;
-			nodes.push_front(new_script);
-		}
-
-		for (uint64_t i=0; i<num_new_rows; ++i) {
-			auto prev_script = tail;
-			auto new_script = new Script(empty_data);
-
-			new_script->prev = prev_script;
-			prev_script->next = new_script;
-			tail = new_script;
-
-			nodes.push_back(new_script);
-		}
-
-		update_indices();
-		push_change({Change::INSERT_ROWS,nodes});
-
-	}
-
-	void insert_rows(const std::list<int64_t>& indices) {
-		if (indices.empty()) return;
-		std::list<uint64_t> abs_rows = abs_indices(indices, num_rows);
-
-		std::list<Script*> nodes;
-
-		for (uint64_t abs_row : abs_rows) {
-			auto new_script = new Script(empty_data);
-
-			auto next_script = index_to_script[abs_row];
-			auto prev_script = next_script->prev;
-
-			if (prev_script) prev_script->next = new_script;
-			else head = new_script;
-
-			new_script->prev = prev_script;
-			next_script->prev = new_script;
-			new_script->next = next_script;
-
-			nodes.push_back(new_script);
-		}
-
-		update_indices();
-		push_change({Change::INSERT_ROWS,nodes});
-	}
-
-	void remove_rows(const std::list<int64_t>& indices) {
-		if (indices.empty()) return;
-		std::list<uint64_t> abs_rows = abs_indices(indices, num_rows);
-
-		std::list<Script*> nodes;
-
-		for (uint64_t abs_row : abs_rows) {
-			auto old_script = index_to_script[abs_row];
-
-			auto prev_script = old_script->prev;
-			auto next_script = old_script->next;
-
-			if (prev_script) prev_script->next = next_script;
-			else head = next_script;
-
-			if (next_script) next_script->prev = prev_script;
-			else tail = prev_script;
-
-			nodes.push_back(old_script);
-		}
-
-		update_indices();
-		push_change({Change::REMOVE_ROWS,nodes});
-	}
-
-	void duplicate_rows(const std::list<int64_t>& indices) {
-		if (indices.empty()) return;
-		std::list<uint64_t> abs_rows = abs_indices(indices, num_rows);
-
-		std::list<Script*> nodes;
-
-		for (uint64_t abs_row : abs_rows) {
-			auto prev_script = index_to_script[abs_row];
-			auto new_script = new Script(prev_script->data);
-
-			auto next_script = prev_script->next;
-
-			if (next_script) next_script->prev = new_script;
-			else tail = new_script;
-
-			new_script->prev = prev_script;
-			prev_script->next = new_script;
-			new_script->next = next_script;
-
-			nodes.push_back(new_script);
-		}
-
-		update_indices();
-		push_change({Change::INSERT_ROWS,nodes});
-	}
-
-public:
-
-	void set(int64_t row, const std::string& col, const std::string& val) {
-		uint64_t abs_row = abs_index(row, num_rows);
-		auto script = index_to_script[abs_row];
-		std::string prev_val = script->data[col];
-		script->data[col] = val;
-		modded_indices.insert(script->index);
-		std::unordered_map<std::tuple<Script*,std::string>,std::tuple<std::string,std::string>> values;
-		values.emplace( std::tuple<Script*,std::string>{script,col},std::tuple<std::string,std::string>{prev_val,val});
-		push_change({Change::SET,{},values});
-	}
-
-	void set(int64_t row, int64_t col, const std::string& val) {
-		uint64_t abs_col = abs_index(col, num_cols);
-		std::string col_name = std::string(index_to_column[abs_col]);
-		set(row,col_name,val);
-	}
-
-	void set(const std::list<std::tuple<int64_t, std::string, std::string>>& cell_values) {
-	    std::unordered_map<std::tuple<Script*,std::string>,std::tuple<std::string,std::string>> values;
-
-	    for (const auto& [row, col, val] : cell_values) {
-	        uint64_t abs_row = abs_index(row, num_rows);
-	        auto script = index_to_script[abs_row];
-	        std::string prev_val = script->data[col];
-	        script->data[col] = val;
-	        modded_indices.insert(script->index);
-	        values.emplace(std::tuple<Script*,std::string>{script, col},std::tuple<std::string,std::string>{prev_val, val});
-	    }
-	    push_change({Change::SET, {}, values});
-	}
-
-	void set(const std::list<std::tuple<int64_t, int64_t, std::string>>& cell_values) {
-	    std::unordered_map<std::tuple<Script*,std::string>,std::tuple<std::string,std::string>> values;
-	    
-	    for (const auto& [row, col, val] : cell_values) {
-	        uint64_t abs_row = abs_index(row, num_rows);
-	        uint64_t abs_col = abs_index(col, num_cols);
-	        std::string col_name = std::string(index_to_column[abs_col]);
-	        auto script = index_to_script[abs_row];
-	        std::string prev_val = script->data[col_name];
-	        script->data[col_name] = val;
-	        modded_indices.insert(script->index);
-	        values.emplace(std::tuple<Script*, std::string>{script, col_name}, std::tuple<std::string, std::string>{prev_val, val});
-	    }
-	    
-	    push_change({Change::SET, {}, values});
-	}
-
-	std::string get(int64_t row, const std::string&  col) {
-		uint64_t abs_row = abs_index(row, num_rows);
-		return (index_to_script[abs_row])->data[col];
-	}
-
-	std::string get(int64_t row, int64_t col) {
-		uint64_t abs_row = abs_index(row, num_rows);
-		uint64_t abs_col = abs_index(col, num_cols);
-		std::string col_name = std::string(index_to_column[abs_col]);
-		return (index_to_script[abs_row])->data[col_name];
-	}
-
-	std::unordered_map<std::string, std::string>& get_map(int64_t row){
-		uint64_t abs_row = abs_index(row, num_rows);
-		return (index_to_script[abs_row])->data;
-	}
+struct DataFrame {
+    DataFrame() = default;
 
 private:
+    using string_ptr = std::shared_ptr<std::string>;
+    using row_t = std::unordered_map<std::string, std::string_view>;
+    using row_ptr = std::shared_ptr<row_t>;
 
-	struct Change {
-		enum Type {INSERT_ROWS,REMOVE_ROWS,SET} type;
-		std::list<Script*> nodes;
-		std::unordered_map<std::tuple<Script*,std::string>,std::tuple<std::string,std::string>> values;
-	};
+    struct StringHasher {
+        using is_transparent = void;
+        size_t operator()(std::string_view sv) const {
+            return std::hash<std::string_view>()(sv);
+        }
+    };
 
-	std::stack<Change> undo_stack;
-	std::stack<Change> redo_stack;
+    struct StringEqual {
+        using is_transparent = void;
+        bool operator()(const string_ptr& a, const string_ptr& b) const {
+            return *a == *b;
+        }
+        bool operator()(const string_ptr& a, std::string_view b) const {
+            return *a == b;
+        }
+        bool operator()(std::string_view a, const string_ptr& b) const {
+            return a == *b;
+        }
+    };
 
-	void push_change(const Change& change) {
-		undo_stack.push(change);
-		while (!redo_stack.empty()) {
-			auto change = redo_stack.top();
-			redo_stack.pop();
-			if (change.type == Change::INSERT_ROWS)
-				for (auto node : change.nodes)
-					delete node;
-		}
-	}
+    enum class ActionType {
+        SetCell,
+        AddRowAtEnd,
+        AddRowAtIndex,
+        AddRowAtMultiple,
+        AddColByName,
+        AddColAtIndex,
+        AddColMultipleByName,
+        AddColMultipleByIndex,
+        DuplicateRow,
+        DuplicateRowMultiple,
+        MoveCol,
+        DeleteRowSingle,
+        DeleteRowMultiple,
+        DeleteColByName,
+        DeleteColByIndex,
+        DeleteColMultipleByName,
+        DeleteColMultipleByIndex
+    };
+
+    struct Action {
+        ActionType type;
+        std::list<uint16_t> indices;
+        std::list<uint16_t> names;
+    };
+
+    std::unordered_set<string_ptr, StringHasher, StringEqual> string_pool;
+    std::vector<row_ptr> table;
+    std::vector<uint16_t> logical_to_physical_row;
+    std::vector<std::string> logical_to_physical_col;
+
+    std::stack<Action> undo_stack;
+    std::stack<Action> redo_stack;
 
 public:
+    void set(int16_t row_idx, int16_t col_idx, const std::string& value) {
+        uint64_t row_physical = abs_index(row_idx, logical_to_physical_row.size());
+        uint64_t col_physical = abs_index(col_idx, logical_to_physical_col.size());
+        const std::string& col_name = logical_to_physical_col[col_physical];
 
-	void undo() {
-		if (undo_stack.empty()) return;
-		auto change = undo_stack.top();
-		redo_stack.push(change);
-		undo_stack.pop();
+        row_ptr& row = table[logical_to_physical_row[row_physical]];
+        string_ptr interned = internString(value);
+        (*row)[col_name] = *interned;
 
-		switch (change.type) {
-			case Change::INSERT_ROWS: {
-				for (auto it = change.nodes.rbegin(); it != change.nodes.rend(); ++it) {
-					auto node = *it;
-					auto prev_script = node->prev;
-					auto next_script = node->next;
+        pushUndo(Action{ ActionType::SetCell });
+    }
 
-					if (prev_script) prev_script->next = next_script;
-					else head = next_script;
+    void set(int16_t row_idx, const std::string& col_name, const std::string& value) {
+        uint64_t row_physical = abs_index(row_idx, logical_to_physical_row.size());
+        row_ptr& row = table[logical_to_physical_row[row_physical]];
+        string_ptr interned = internString(value);
+        (*row)[col_name] = *interned;
 
-					if (next_script) next_script->prev = prev_script;
-					else tail = prev_script;
-				}
-				update_indices();
-				break;
-			}
-			case Change::REMOVE_ROWS: {
-				for (auto it = change.nodes.rbegin(); it != change.nodes.rend(); ++it) {
-					auto node = *it;
-					auto prev_script = node->prev;
-					auto next_script = node->next;
+        pushUndo(Action{ ActionType::SetCell });
+    }
 
-					if (prev_script) prev_script->next = node;
-					else head = node;
+    std::string get(int16_t row_idx, int16_t col_idx) const {
+        uint64_t row_physical = abs_index(row_idx, logical_to_physical_row.size());
+        uint64_t col_physical = abs_index(col_idx, logical_to_physical_col.size());
+        const std::string& col_name = logical_to_physical_col[col_physical];
 
-					if (next_script) next_script->prev = node;
-					else tail = node;
-				}
-				update_indices();
-				break;
-			}
-			case Change::SET: {
-				for (auto [cell_index,values] : change.values){
-					auto [node,col] = cell_index;
-					auto [prev_val,val] = values;
-					node->data[col] = prev_val;
-					modded_indices.insert(node->index);
-				}
-				break;
-			}
-		}
-	}
+        const row_ptr& row = table[logical_to_physical_row[row_physical]];
+        auto it = row->find(col_name);
+        return (it != row->end()) ? std::string(it->second) : "";
+    }
 
-	void redo() {
-		if (redo_stack.empty()) return;
-		auto change = redo_stack.top();
-		undo_stack.push(change);
-		redo_stack.pop();
+    std::string get(int16_t row_idx, const std::string& col_name) const {
+        uint64_t row_physical = abs_index(row_idx, logical_to_physical_row.size());
+        const row_ptr& row = table[logical_to_physical_row[row_physical]];
+        auto it = row->find(col_name);
+        return (it != row->end()) ? std::string(it->second) : "";
+    }
 
-		switch (change.type) {
-			case Change::INSERT_ROWS: {
-				for (auto node : change.nodes) {
-					auto prev_script = node->prev;
-					auto next_script = node->next;
+    void addRow() {
+        table.emplace_back(std::make_shared<row_t>());
+        logical_to_physical_row.push_back(table.size() - 1);
+        pushUndo(Action{ ActionType::AddRowAtEnd });
+    }
 
-					if (prev_script) prev_script->next = node;
-					else head = node;
+    void addRow(int16_t index) {
+        uint64_t idx = abs_index(index, logical_to_physical_row.size() + 1);
+        table.emplace_back(std::make_shared<row_t>());
+        logical_to_physical_row.insert(logical_to_physical_row.begin() + idx, table.size() - 1);
+        pushUndo(Action{ ActionType::AddRowAtIndex });
+    }
 
-					if (next_script) next_script->prev = node;
-					else tail = node;
-				}
-				update_indices();
-				break;
-			}
-			case Change::REMOVE_ROWS: {
-				// Redo removal: delete the nodes again
-				for (auto node : change.nodes) {
-					auto prev_script = node->prev;
-					auto next_script = node->next;
+    void addRow(const std::list<int16_t>& indexes) {
+        std::vector<uint64_t> sorted_indexes;
+        for (int16_t idx : indexes) {
+            sorted_indexes.push_back(abs_index(idx, logical_to_physical_row.size() + sorted_indexes.size()));
+        }
+        std::sort(sorted_indexes.rbegin(), sorted_indexes.rend());
 
-					if (prev_script) prev_script->next = next_script;
-					else head = next_script;
+        for (uint64_t idx : sorted_indexes) {
+            table.emplace_back(std::make_shared<row_t>());
+            logical_to_physical_row.insert(logical_to_physical_row.begin() + idx, table.size() - 1);
+        }
+        pushUndo(Action{ ActionType::AddRowAtMultiple });
+    }
 
-					if (next_script) next_script->prev = prev_script;
-					else tail = prev_script;
-				}
-				update_indices();
-				break;
-			}
-			case Change::SET: {
-				for (auto [cell_index,values] : change.values){
-					auto [node,col] = cell_index;
-					auto [prev_val,val] = values;
-					node->data[col] = val;
-					modded_indices.insert(node->index);
-				}
-				break;
-			}
-		}
-	}
+    void duplicateRow(int16_t index) {
+        uint64_t idx = abs_index(index, logical_to_physical_row.size());
+        row_ptr new_row = std::make_shared<row_t>(*table[logical_to_physical_row[idx]]);
+        table.push_back(new_row);
+        logical_to_physical_row.insert(logical_to_physical_row.begin() + idx + 1, table.size() - 1);
+        pushUndo(Action{ ActionType::DuplicateRow });
+    }
+
+    void duplicateRow(const std::list<int16_t>& indexes) {
+        std::vector<uint64_t> sorted_indexes;
+        for (int16_t idx : indexes) {
+            sorted_indexes.push_back(abs_index(idx, logical_to_physical_row.size()));
+        }
+        std::sort(sorted_indexes.rbegin(), sorted_indexes.rend());
+
+        for (uint64_t idx : sorted_indexes) {
+            row_ptr new_row = std::make_shared<row_t>(*table[logical_to_physical_row[idx]]);
+            table.push_back(new_row);
+            logical_to_physical_row.insert(logical_to_physical_row.begin() + idx + 1, table.size() - 1);
+        }
+        pushUndo(Action{ ActionType::DuplicateRowMultiple });
+    }
+
+    void delRow(int16_t index) {
+        uint64_t idx = abs_index(index, logical_to_physical_row.size());
+        logical_to_physical_row.erase(logical_to_physical_row.begin() + idx);
+        pushUndo(Action{ ActionType::DeleteRowSingle });
+    }
+
+    void delRow(const std::list<int16_t>& indexes) {
+        std::vector<uint64_t> sorted_indexes;
+        for (int16_t idx : indexes) {
+            sorted_indexes.push_back(abs_index(idx, logical_to_physical_row.size()));
+        }
+        std::sort(sorted_indexes.rbegin(), sorted_indexes.rend());
+
+        for (uint64_t idx : sorted_indexes) {
+            logical_to_physical_row.erase(logical_to_physical_row.begin() + idx);
+        }
+        pushUndo(Action{ ActionType::DeleteRowMultiple });
+    }
+
+    void addCol(const std::string& name) {
+        logical_to_physical_col.push_back(name);
+        pushUndo(Action{ ActionType::AddColByName });
+    }
+
+    void addCol(const std::tuple<int16_t, std::string>& indexed_name) {
+        auto [index, name] = indexed_name;
+        uint64_t idx = abs_index(index, logical_to_physical_col.size() + 1);
+        logical_to_physical_col.insert(logical_to_physical_col.begin() + idx, name);
+        pushUndo(Action{ ActionType::AddColAtIndex });
+    }
+
+    void addCol(const std::list<std::string>& names) {
+        for (const auto& name : names) {
+            logical_to_physical_col.push_back(name);
+        }
+        pushUndo(Action{ ActionType::AddColMultiple });
+    }
+
+    void addCol(const std::list<std::tuple<int16_t, std::string>>& indexed_names) {
+        std::vector<std::tuple<uint64_t, std::string>> sorted_indexes;
+        for (const auto& [idx, name] : indexed_names) {
+            sorted_indexes.emplace_back(abs_index(idx, logical_to_physical_col.size() + sorted_indexes.size()), name);
+        }
+        std::sort(sorted_indexes.rbegin(), sorted_indexes.rend());
+
+        for (const auto& [idx, name] : sorted_indexes) {
+            logical_to_physical_col.insert(logical_to_physical_col.begin() + idx, name);
+        }
+        pushUndo(Action{ ActionType::AddColMultiple });
+    }
+
+    void delCol(const std::string& name) {
+        auto it = std::find(logical_to_physical_col.begin(), logical_to_physical_col.end(), name);
+        if (it != logical_to_physical_col.end()) {
+            logical_to_physical_col.erase(it);
+            pushUndo(Action{ ActionType::DeleteColByName });
+        }
+    }
+
+    void delCol(int16_t index) {
+        uint64_t idx = abs_index(index, logical_to_physical_col.size());
+        logical_to_physical_col.erase(logical_to_physical_col.begin() + idx);
+        pushUndo(Action{ ActionType::DeleteColByIndex });
+    }
+
+    void delCol(const std::list<std::string>& names) {
+        for (auto it = names.rbegin(); it != names.rend(); ++it) {
+            delCol(*it);
+        }
+        pushUndo(Action{ ActionType::DeleteColMultipleByName });
+    }
+
+    void delCol(const std::list<int16_t>& indexes) {
+        std::vector<uint64_t> sorted_indexes;
+        for (int16_t idx : indexes) {
+            sorted_indexes.push_back(abs_index(idx, logical_to_physical_col.size()));
+        }
+        std::sort(sorted_indexes.rbegin(), sorted_indexes.rend());
+
+        for (uint64_t idx : sorted_indexes) {
+            logical_to_physical_col.erase(logical_to_physical_col.begin() + idx);
+        }
+        pushUndo(Action{ ActionType::DeleteColMultipleByIndex });
+    }
+
+    void moveCol(int16_t from, int16_t to) {
+        uint64_t from_idx = abs_index(from, logical_to_physical_col.size());
+        uint64_t to_idx = abs_index(to, logical_to_physical_col.size());
+        if (from_idx == to_idx) return;
+
+        auto col_name = logical_to_physical_col[from_idx];
+        logical_to_physical_col.erase(logical_to_physical_col.begin() + from_idx);
+        logical_to_physical_col.insert(logical_to_physical_col.begin() + to_idx, col_name);
+
+        pushUndo(Action{ ActionType::MoveCol });
+    }
+
+    void undo();
+    void redo();
 
 private:
+    uint64_t abs_index(int64_t index, uint64_t size) const {
+        if (index < 0) index += size;
+        if (index >= size)
+            throw std::out_of_range("Index out of range.");
+        return static_cast<uint64_t>(index);
+    }
 
-	uint64_t abs_index(int64_t index, uint64_t size) const {
-		if (index < 0) index += size;
-		if (index >= size)
-			throw std::out_of_range("Index out of range.");
-		return static_cast<uint64_t>(index);
-	}
+    string_ptr internString(const std::string& str) {
+        auto it = string_pool.find(str);
+        if (it != string_pool.end()) return *it;
+        auto inserted = std::make_shared<std::string>(str);
+        string_pool.insert(inserted);
+        return inserted;
+    }
 
-	std::list<uint64_t> abs_indices(const std::list<int64_t>& indices, uint64_t size) const {
-		std::list<uint64_t> abs_rows;
-		for (auto index : indices)
-			abs_rows.insert(abs_rows.end(),abs_index(index,size));
-		return abs_rows;
-	}
-
-	void update_indices(){
-		Script* current = head;
-		num_rows = 0;
-		while(current){
-			if (index_to_script[num_rows]!=current)
-				modded_indices.insert(num_rows);
-			current->index = num_rows;
-			index_to_script[num_rows++] = current;
-			current = current->next;
-		}
-	}
-
-public:
-
-	void clear() {
-		empty_data.clear();
-		index_to_script.clear();
-		col_names.clear();
-		index_to_column.clear();
-		num_rows=0, num_cols=0;
-
-		auto node = head;
-		while (node){
-			auto to_delete = node;
-			node = node->next;
-			delete to_delete;
-		}
-		head = nullptr;
-		tail = nullptr;
-	}
-
-	void clear_cells(const std::list<std::tuple<int64_t,std::string>>& cell_indices) {
-		std::unordered_map<std::tuple<Script*,std::string>,std::tuple<std::string,std::string>> values;
-		for (auto [row,col] : cell_indices) {
-			uint64_t abs_row = abs_index(row, num_rows);
-			auto script = index_to_script[abs_row];
-			std::string prev_val = script->data[col];
-			std::string val = "";
-			script->data[col] = "";
-			modded_indices.insert(script->index);
-			values.emplace(std::tuple<Script*,std::string>{script,col},std::tuple<std::string,std::string>{prev_val,val});
-		}
-		push_change({Change::SET,{},values});
-	}
-	
-	void clear_cells(const std::list<std::tuple<int64_t,int64_t>>& cell_indices) {
-		std::unordered_map<std::tuple<Script*,std::string>,std::tuple<std::string,std::string>> values;
-		for (auto [row,col] : cell_indices) {
-			uint64_t abs_row = abs_index(row, num_rows);
-			uint64_t abs_col = abs_index(col, num_cols);
-			std::string col_name = std::string(index_to_column[abs_col]);
-			auto script = index_to_script[abs_row];
-			std::string prev_val = script->data[col_name];
-			std::string val = "";
-			script->data[col_name] = "";
-			modded_indices.insert(script->index);
-			values.emplace(std::tuple<Script*,std::string>{script,col_name},std::tuple<std::string,std::string>{prev_val,val});
-		}
-		push_change({Change::SET,{},values});
-	}
-
-	void insert_column(const std::string& name) {
-		if (!col_names.contains(name)) {
-			col_names.insert(name);
-			num_cols = col_names.size();
-			uint64_t i = 0;
-			for (const auto& col_name : col_names)
-				index_to_column[i++] = col_name;
-			auto node = head;
-			while (node){
-				node->data[name];
-				node = node->next;
-			}
-			empty_data[name];
-		}
-	}
-
-public:
-
-	void serialize(json& j) const {
-		json& dataframe = j["dataframe"];
-
-		dataframe["empty_data"] = empty_data;
-
-		dataframe["index_to_script"] = json::object();
-		auto node = head;
-		uint64_t index = 0;
-		while (node) {
-			dataframe["index_to_script"][std::to_string(index++)] = node->data;
-			node = node->next;
-		}
-
-		dataframe["col_names"] = col_names;
-	}
-
-	bool deserialize(const json& j) {
-		// Temporary variables to hold the data
-		std::unordered_map<std::string, std::string> temp_empty_data;
-		std::map<uint64_t, Script*> temp_index_to_script;
-		std::set<std::string> temp_col_names;
-
-		try {
-			const json& dataframe = j.at("dataframe");
-
-			// Extract data into temporary variables
-			for (auto [var,val] : dataframe.at("empty_data").items())
-				temp_empty_data[var]=val;
-
-			for (auto& [key, value] : dataframe.at("index_to_script").items()) {
-				std::unordered_map<std::string, std::string> temp_primer;
-				for (auto [var,val] : value.items())
-					temp_primer[var]=val;
-				auto script = new Script(temp_primer);
-				temp_index_to_script[std::stoull(key)] = script;
-			}
-
-			for (auto& [_,col] : dataframe.at("col_names").items())
-				temp_col_names.insert(col);
-
-
-			// If all reads succeeded, move the temporary variables into the class members
-			index_to_script.clear();
-			index_to_column.clear();
-
-			auto node = head;
-			while (node){
-				auto to_delete = node;
-				node = node->next;
-				delete to_delete;
-			}
-			
-			head = nullptr;
-			tail = nullptr;
-			
-			for (auto& [col_name,val] : temp_empty_data)
-				empty_data[col_name]=val;
-			
-			for (auto& [index, script] : temp_index_to_script) {
-				if (!head) {
-					head = tail = script;
-				} else {
-					tail->next = script;
-					script->prev = tail;
-					tail = script;
-				}
-				index_to_script[index] = script;
-				modded_indices.insert(index);
-			}
-			
-			for (auto& col_name : temp_col_names)
-				col_names.insert(col_name);
-			
-			num_cols = 0;
-			for (const auto& col_name : col_names)
-				index_to_column[num_cols++] = col_name;
-
-			update_indices();
-
-			return false;
-		} catch (const std::exception& e) {
-			for (auto& [index, script] : temp_index_to_script)
-				delete script;
-			return true;
-		}
-	}
-
-	void filter_variables(std::set<std::string_view> vars){
-		for (const auto& name : col_names) {
-			if (!vars.contains(name)) {
-				col_names.erase(name);
-				auto node = head;
-				while (node){
-					node->data.erase(name);
-					node = node->next;
-				}
-				empty_data.erase(name);
-			}
-		}
-		num_cols = 0;
-		for (const auto& col_name : col_names)
-			index_to_column[num_cols++] = col_name;
-	}
-
-public:
-
-	uint64_t row_count() const {return num_rows;}
-	uint64_t col_count() const {return num_cols;}
-
+    void pushUndo(Action action) {
+        undo_stack.push(action);
+        while (!redo_stack.empty()) redo_stack.pop();
+    }
 };
 
 #endif
