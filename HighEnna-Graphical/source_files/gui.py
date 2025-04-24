@@ -1026,17 +1026,14 @@ class TplTableView(QTableView):
             if not selected_indexes:
                 return
 
-            # Sort selected indexes by row and column
             selected_indexes.sort(key=lambda x: (x.row(), x.column()))
 
-            # Create a 2D array of selected values
             rows = {}
             for index in selected_indexes:
                 if index.row() not in rows:
                     rows[index.row()] = {}
                 rows[index.row()][index.column()] = index.data(Qt.ItemDataRole.DisplayRole)
 
-            # Convert to a string with tab-separated values for each row and newlines between rows
             text_to_copy = ""
             for row in sorted(rows.keys()):
                 row_data = []
@@ -1407,7 +1404,6 @@ class MainWindow(QWidget):
         self.tpl_project.set_output_directory(output_directory_path)
 
     def resize_scroll_area_to_fit_tpl_list(self):
-        # Clear the existing layout items
         while self.scroll_list_layout.count():
             item = self.scroll_list_layout.takeAt(0)
             widget = item.widget()
@@ -1416,7 +1412,6 @@ class MainWindow(QWidget):
             else:
                 layout = item.layout()
                 if layout:
-                    # Recursively clear the nested layout
                     while layout.count():
                         nested_item = layout.takeAt(0)
                         nested_widget = nested_item.widget()
@@ -1431,7 +1426,6 @@ class MainWindow(QWidget):
                                     if nested_nested_widget:
                                         nested_nested_widget.deleteLater()
                                     else:
-                                        # Nested layouts within layouts (if any)
                                         nested_nested_layout = nested_nested_item.layout()
                                         if nested_nested_layout:
                                             while nested_nested_layout.count():
@@ -1440,7 +1434,6 @@ class MainWindow(QWidget):
                                                 if double_nested_widget:
                                                     double_nested_widget.deleteLater()
 
-        # Rebuild the layout based on the current self.tpl_project size
         self.scroll_area_label_list.clear()
         self.scroll_area_render_button_list.clear()
         self.scroll_area_script_table_list.clear()

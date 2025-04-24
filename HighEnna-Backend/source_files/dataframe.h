@@ -1,348 +1,343 @@
 #ifndef CUSTOM_DATAFRAME_H
 #define CUSTOM_DATAFRAME_H
 
+
 struct DataFrame {
-    DataFrame() = default;
 
 private:
-    using string_ptr = std::shared_ptr<std::string>;
-
-    struct StringPtrHash {
-        using is_transparent = void;
-        size_t operator()(const std::string_view& str_view) const { return std::hash<std::string_view>{}(str_view); }
-        size_t operator()(const string_ptr& str_ptr) const { return str_ptr ? std::hash<std::string_view>{}(std::string_view(*str_ptr)) : 0; }
-        size_t operator()(const std::string& str) const { return std::hash<std::string_view>{}(std::string_view(str)); }
-    };
-
-    struct StringPtrEqual {
-        using is_transparent = void;
-        bool operator()(const string_ptr& lhs, const string_ptr& rhs) const { return *lhs == *rhs; }
-        bool operator()(const string_ptr& lhs, const std::string& rhs) const { return *lhs == rhs; }
-        bool operator()(const string_ptr& lhs, const std::string_view& rhs) const { return *lhs == rhs; }
-        
-        bool operator()(const std::string& lhs, const string_ptr& rhs) const { return lhs == *rhs; }
-        bool operator()(const std::string& lhs, const std::string& rhs) const { return lhs == rhs; }
-        bool operator()(const std::string& lhs, const std::string_view& rhs) const { return lhs == rhs; }
-        
-        bool operator()(const std::string_view& lhs, const string_ptr& rhs) const { return lhs == *rhs; }
-        bool operator()(const std::string_view& lhs, const std::string& rhs) const { return lhs == rhs; }
-        bool operator()(const std::string_view& lhs, const std::string_view& rhs) const { return lhs == rhs; }
-    };
-
-    using row_t = std::unordered_map<std::string_view, string_ptr, StringPtrHash, StringPtrEqual>;
-    using row_ptr = std::shared_ptr<row_t>;
 
     enum class ActionType {
-        SetCell,
+        SetVal,
         AddRow,
-        DuplicateRow,
-        DeleteRow,
+        DelRow,
+        MovRow,
         AddCol,
-        DeleteCol,
-        MoveCol,
-        MoveRow
+        DelCol,
+        MovCol,
     };
 
     struct Action {
-        ActionType type;
-        std::list<uint64_t> indices;
-        std::list<std::string> names;
-        std::list<std::string> values;
+        ActionType typ;
+        std::list<uint64_t>     row_log;
+        std::list<uint64_t>     row_phy;
+        std::list<uint64_t>     col_log;
+        std::list<uint64_t>     col_phy;
+        std::list<std::string>  col_nme;
+        std::list<std::string>  new_val;
+        std::list<std::string>  old_val;
+        Action(ActionType action_type) : typ(action_type) {}
     };
 
-    std::unordered_set<string_ptr, StringPtrHash, StringPtrEqual> value_pool;
-    std::unordered_set<string_ptr, StringPtrHash, StringPtrEqual> col_name_pool;
+private:
 
-    std::vector<uint64_t> logical_to_physical_idx_row;
-    std::vector<string_ptr> logical_to_physical_idx_col;
 
-    std::vector<row_ptr> table;
+    std::unordered_set<std::string> col_name_pool;
 
-    std::stack<Action> undo_stack;
-    std::stack<Action> redo_stack;
+    std::vector<uint64_t> row_idx_logical_to_physical;
+    std::vector<uint64_t> col_idx_logical_to_physical;
+
+    std::vector<std::unordered_map<std::string,std::string>> rows;
+    std::vector<std::string> cols;
+
+    std::stack<std::shared_ptr<Action>> undo_stack;
+    std::stack<std::shared_ptr<Action>> redo_stack;
 
 public:
 
-    void set(int64_t row_idx, int64_t col_idx, const std::string& value) {
-        uint64_t row_logical_idx = abs_index(row_idx, logical_to_physical_idx_row.size());
-        uint64_t col_logical_idx = abs_index(col_idx, logical_to_physical_idx_col.size());
+    size_t rowCount() const { return row_idx_logical_to_physical.size(); }
+    size_t colCount() const { return col_idx_logical_to_physical.size(); }
 
-        uint64_t                row_physical_idx = logical_to_physical_idx_row[row_logical_idx];
-        const string_ptr& col_physical_idx = logical_to_physical_idx_col[col_logical_idx];
+public:
 
-        row_ptr& row = table[row_physical_idx];
-        (*row)[*col_physical_idx] = internString(value);
-
-        pushUndo(Action{ ActionType::SetCell });
+    std::string getCol(int64_t col_idx) {
+        uint64_t col_logical_idx = abs_index(col_idx, col_idx_logical_to_physical.size());
+        uint64_t col_physical_idx = col_idx_logical_to_physical[col_logical_idx];
+        return cols[col_physical_idx];
     }
 
-    void set(int64_t row_idx, const std::string& col_name, const std::string& value) {
-        uint64_t row_logical_idx = abs_index(row_idx, logical_to_physical_idx_row.size());
-        uint64_t row_physical_idx = logical_to_physical_idx_row[row_logical_idx];
-
-        row_ptr& row = table[row_physical_idx];
-        (*row)[col_name] = internString(value);
-
-        pushUndo(Action{ ActionType::SetCell });
+    std::unordered_map<std::string,std::string> getRow(int64_t row_idx) {
+        uint64_t row_logical_idx = abs_index(row_idx, row_idx_logical_to_physical.size());
+        uint64_t row_physical_idx = row_idx_logical_to_physical[row_logical_idx];
+        return rows[row_physical_idx];
     }
 
-    void set(const std::list<std::tuple<int64_t, int64_t, std::string>>& positions) {
-        for (const auto& [row_idx, col_idx, value] : positions) {
-            uint64_t row_logical_idx = abs_index(row_idx, logical_to_physical_idx_row.size());
-            uint64_t col_logical_idx = abs_index(col_idx, logical_to_physical_idx_col.size());
+    std::string getVal(int64_t row_idx, int64_t col_idx) {
 
-            uint64_t                row_physical_idx = logical_to_physical_idx_row[row_logical_idx];
-            const string_ptr& col_physical_idx = logical_to_physical_idx_col[col_logical_idx];
+        uint64_t row_logical_idx = abs_index(row_idx, row_idx_logical_to_physical.size());
+        uint64_t col_logical_idx = abs_index(col_idx, col_idx_logical_to_physical.size());
 
-            row_ptr& row = table[row_physical_idx];
-            (*row)[*col_physical_idx] = internString(value);
+        uint64_t row_physical_idx = row_idx_logical_to_physical[row_logical_idx];
+        uint64_t col_physical_idx = col_idx_logical_to_physical[col_logical_idx];
+
+        auto& row = rows[row_physical_idx];
+        auto& col = cols[col_physical_idx];
+
+        return row[col];
+    }
+
+    void set(const std::list<std::tuple<int64_t, int64_t, std::string>>& items) {
+        auto& action = pushUndo(ActionType::SetVal);
+
+        for (const auto& [row_idx, col_idx, val] : items) {
+
+            uint64_t row_logical_idx = abs_index(row_idx, row_idx_logical_to_physical.size());
+            uint64_t col_logical_idx = abs_index(col_idx, col_idx_logical_to_physical.size());
+
+            uint64_t row_physical_idx = row_idx_logical_to_physical[row_logical_idx];
+            uint64_t col_physical_idx = col_idx_logical_to_physical[col_logical_idx];
+
+            auto& row = rows[row_physical_idx];
+            auto& col = cols[col_physical_idx];
+
+            std::string old = row[col];
+
+            action.row_phy.push_back(row_physical_idx);
+            action.col_phy.push_back(col_physical_idx);
+            action.col_nme.push_back(col);
+            action.new_val.push_back(val);
+            action.old_val.push_back(old);
+
+            row[col] = val;
         }
-
-        pushUndo(Action{ ActionType::SetCell });
     }
 
-    void set(const std::list<std::tuple<int64_t, std::string, std::string>>& positions) {
-        for (const auto& [row_idx, col_physical_idx, value] : positions) {
-            uint64_t row_logical_idx = abs_index(row_idx, logical_to_physical_idx_row.size());
-            uint64_t row_physical_idx = logical_to_physical_idx_row[row_logical_idx];
+public:
 
-            row_ptr& row = table[row_physical_idx];
-            (*row)[col_physical_idx] = internString(value);
+    void addRow(int64_t n_rows) {
+        auto& action = pushUndo(ActionType::AddRow);
+
+        for (int64_t i=0; i<n_rows; ++i) {
+            uint64_t row_logical_idx = row_idx_logical_to_physical.size();
+            rows.emplace_back();
+            row_idx_logical_to_physical.insert(row_idx_logical_to_physical.begin() + row_logical_idx, rows.size() - 1);
+            action.row_log.push_back(row_logical_idx);
+            action.row_phy.push_back(rows.size() - 1);
         }
-
-        pushUndo(Action{ ActionType::SetCell });
-    }
-
-    //--------------------------------------------------------------------------------------------------------
-
-    std::string get(int64_t row_idx, int64_t col_idx) const {
-        uint64_t row_logical_idx = abs_index(row_idx, logical_to_physical_idx_row.size());
-        uint64_t col_logical_idx = abs_index(col_idx, logical_to_physical_idx_col.size());
-
-        uint64_t                row_physical_idx = logical_to_physical_idx_row[row_logical_idx];
-        const string_ptr& col_physical_idx = logical_to_physical_idx_col[col_logical_idx];
-
-        const row_ptr& row = table[row_physical_idx];
-        return *(*row)[*col_physical_idx];
-    }
-
-    std::string get(int64_t row_idx, const std::string& col_name) const {
-        uint64_t row_logical_idx = abs_index(row_idx, logical_to_physical_idx_row.size());
-        uint64_t row_physical_idx = logical_to_physical_idx_row[row_logical_idx];
-
-        if (!col_name_pool.contains(col_name))
-            throw std::out_of_range("Key not found in column names.");
-        // throw pybind11::key_error("Key not found in column names.");
-
-        const row_ptr& row = table[row_physical_idx];
-        return *(*row)[col_name];
-    }
-
-    //*--------------------------------------------------------------------------------------------------------
-
-    uint64_t width() { return logical_to_physical_idx_col.size(); }
-
-    uint64_t height() { return logical_to_physical_idx_row.size(); }
-
-    //*--------------------------------------------------------------------------------------------------------
-
-    void addRow() {
-        table.emplace_back(std::make_shared<row_t>());
-        logical_to_physical_idx_row.push_back(table.size() - 1);
-        pushUndo(Action{ ActionType::AddRow });
-    }
-
-    void addRow(int64_t row_idx) {
-        uint64_t row_logical_idx = abs_index(row_idx, logical_to_physical_idx_row.size() + 1);
-        table.emplace_back(std::make_shared<row_t>());
-        logical_to_physical_idx_row.insert(logical_to_physical_idx_row.begin() + row_logical_idx, table.size() - 1);
-        pushUndo(Action{ ActionType::AddRow });
     }
 
     void addRow(const std::list<int64_t>& row_indexes) {
-        std::list<uint64_t> row_logicals = abs_index(row_indexes, logical_to_physical_idx_row.size());
+        auto& action = pushUndo(ActionType::AddRow);
+
+        std::list<uint64_t> row_logicals = abs_index(row_indexes, row_idx_logical_to_physical.size()+1);
         for (uint64_t row_logical_idx : row_logicals) {
-            table.emplace_back(std::make_shared<row_t>());
-            logical_to_physical_idx_row.insert(logical_to_physical_idx_row.begin() + row_logical_idx, table.size() - 1);
+            rows.emplace_back();
+            row_idx_logical_to_physical.insert(row_idx_logical_to_physical.begin() + row_logical_idx, rows.size() - 1);
+            action.row_log.push_back(row_logical_idx);
+            action.row_phy.push_back(rows.size() - 1);
         }
-        pushUndo(Action{ ActionType::AddRow });
-    }
-
-    //*--------------------------------------------------------------------------------------------------------
-
-    void duplicateRow(int64_t row_idx) {
-        uint64_t row_logical_idx = abs_index(row_idx, logical_to_physical_idx_row.size());
-        table.emplace_back(std::make_shared<row_t>(*table[logical_to_physical_idx_row[row_logical_idx]]));
-        logical_to_physical_idx_row.insert(logical_to_physical_idx_row.begin() + row_logical_idx + 1, table.size() - 1);
-        pushUndo(Action{ ActionType::DuplicateRow });
     }
 
     void duplicateRow(const std::list<int64_t>& row_indexes) {
-        std::list<uint64_t> row_logicals = abs_index(row_indexes, logical_to_physical_idx_row.size());
+        pushUndo(ActionType::AddRow);
+        auto& action = *(undo_stack.top());
+
+        std::list<uint64_t> row_logicals = abs_index(row_indexes, row_idx_logical_to_physical.size());
         for (uint64_t row_logical_idx : row_logicals) {
-            table.emplace_back(std::make_shared<row_t>(*table[logical_to_physical_idx_row[row_logical_idx]]));
-            logical_to_physical_idx_row.insert(logical_to_physical_idx_row.begin() + row_logical_idx + 1, table.size() - 1);
+            uint64_t row_physical_idx = row_idx_logical_to_physical[row_logical_idx];
+            rows.emplace_back(rows[row_physical_idx]);
+            row_idx_logical_to_physical.insert(row_idx_logical_to_physical.begin() + row_logical_idx+1, rows.size() - 1);
+            action.row_log.push_back(row_logical_idx+1);
+            action.row_phy.push_back(rows.size() - 1);
         }
-        pushUndo(Action{ ActionType::DuplicateRow });
-    }
-
-    //*--------------------------------------------------------------------------------------------------------
-
-    void delRow(int64_t row_idx) {
-        uint64_t row_logical_idx = abs_index(row_idx, logical_to_physical_idx_row.size());
-        logical_to_physical_idx_row.erase(logical_to_physical_idx_row.begin() + row_logical_idx);
-        pushUndo(Action{ ActionType::DeleteRow });
     }
 
     void delRow(const std::list<int64_t>& row_indexes) {
-        std::list<uint64_t> row_logicals = abs_index(row_indexes, logical_to_physical_idx_row.size());
-        for (uint64_t row_logical_idx : row_logicals)
-            logical_to_physical_idx_row.erase(logical_to_physical_idx_row.begin() + row_logical_idx);
-        pushUndo(Action{ ActionType::DeleteRow });
-    }
+        auto& action = pushUndo(ActionType::DelRow);
 
-    //--------------------------------------------------------------------------------------------------------
-
-    void addCol(const std::string& col_name) {
-        auto [it, inserted] = col_name_pool.insert(std::make_shared<std::string>(col_name));
-        if (inserted) {
-            fillCol(col_name);
-            logical_to_physical_idx_col.emplace_back(*it);
-            pushUndo(Action{ ActionType::AddCol });
+        std::list<uint64_t> row_logicals = abs_index(row_indexes, row_idx_logical_to_physical.size());
+        for (uint64_t row_logical_idx : row_logicals) {
+            uint64_t row_physical_idx = row_idx_logical_to_physical[row_logical_idx];
+            action.row_log.push_back(row_logical_idx);
+            action.row_phy.push_back(row_physical_idx);
+            row_idx_logical_to_physical.erase(row_idx_logical_to_physical.begin() + row_logical_idx);
         }
     }
+
+public:
 
     void addCol(const std::list<std::string>& col_names) {
-        bool modified = false;
-        for (const auto& col_name : col_names) {
-            auto [it, inserted] = col_name_pool.insert(std::make_shared<std::string>(col_name));
-            if (inserted) {
-                fillCol(col_name);
-                logical_to_physical_idx_col.emplace_back(*it);
-                modified = true;
+        auto& action = pushUndo(ActionType::AddCol);
+
+        for (const std::string& col_name : col_names) {
+            if (!col_name_pool.contains(col_name)){
+                
+                col_name_pool.insert(col_name);
+                cols.emplace_back(col_name);
+                
+                uint64_t col_logical_idx = col_idx_logical_to_physical.size();
+                uint64_t col_physical_idx = cols.size() - 1;
+                
+                col_idx_logical_to_physical.insert(col_idx_logical_to_physical.begin() + col_logical_idx, col_physical_idx);
+                
+                action.col_log.push_back(col_logical_idx);
+                action.col_phy.push_back(col_physical_idx);
+                action.col_nme.push_back(col_name);
+            
             }
         }
-        if (modified)
-            pushUndo(Action{ ActionType::AddCol });
-    }
-
-    void addCol(const std::tuple<int64_t, std::string>& indexed_col_name) {
-        auto [col_idx, col_name] = indexed_col_name;
-        uint64_t col_logical_idx = abs_index(col_idx, logical_to_physical_idx_col.size() + 1);
-
-        auto [it, inserted] = col_name_pool.insert(std::make_shared<std::string>(col_name));
-        if (inserted) {
-            fillCol(col_name);
-            logical_to_physical_idx_col.insert(logical_to_physical_idx_col.begin() + col_logical_idx, *it);
-            pushUndo(Action{ ActionType::AddCol });
-        }
-    }
-
-    void addCol(const std::list<std::tuple<int64_t, std::string>>& indexed_col_names) {
-        auto logical_indexed_col_names = abs_index(indexed_col_names, logical_to_physical_idx_row.size());
-        bool modified = false;
-        for (auto [col_logical_idx, col_name] : logical_indexed_col_names) {
-            auto [it, inserted] = col_name_pool.insert(std::make_shared<std::string>(col_name));
-            if (inserted) {
-                fillCol(col_name);
-                logical_to_physical_idx_col.insert(logical_to_physical_idx_col.begin() + col_logical_idx, *it);
-                modified = true;
-            }
-        }
-        if (modified)
-            pushUndo(Action{ ActionType::AddCol });
-    }
-
-
-    //--------------------------------------------------------------------------------------------------------
-
-    void delCol(const std::string& col_name) {
-        auto it = std::find(logical_to_physical_idx_col.begin(), logical_to_physical_idx_col.end(), col_name);
-        if (it != logical_to_physical_idx_col.end()) {
-            logical_to_physical_idx_col.erase(it);
-            pushUndo(Action{ ActionType::DeleteCol });
-        }
-    }
-
-    void delCol(int64_t col_index) {
-        uint64_t logical_idx = abs_index(col_index, logical_to_physical_idx_col.size());
-        logical_to_physical_idx_col.erase(logical_to_physical_idx_col.begin() + logical_idx);
-        pushUndo(Action{ ActionType::DeleteCol });
-    }
-
-    void delCol(const std::list<std::string>& col_names) {
-        bool modified = false;
-        for (const auto& col_name : col_names) {
-            auto it = std::find(logical_to_physical_idx_col.begin(), logical_to_physical_idx_col.end(), col_name);
-            if (it != logical_to_physical_idx_col.end()) {
-                logical_to_physical_idx_col.erase(it);
-                modified = true;
-            }
-        }
-        if (modified)
-            pushUndo(Action{ ActionType::DeleteCol });
     }
 
     void delCol(const std::list<int64_t>& col_indexes) {
-        std::list<uint64_t> col_logicals = abs_index(col_indexes, logical_to_physical_idx_col.size());
-        for (uint64_t col_logical_idx : col_logicals)
-            logical_to_physical_idx_col.erase(logical_to_physical_idx_col.begin() + col_logical_idx);
-        pushUndo(Action{ ActionType::DeleteCol });
-    }
+        auto& action = pushUndo(ActionType::DelCol);
 
-    //--------------------------------------------------------------------------------------------------------
+        std::list<uint64_t> col_logicals = abs_index(col_indexes, col_idx_logical_to_physical.size());
+        for (uint64_t col_logical_idx : col_logicals) {
+            uint64_t col_physical_idx = col_idx_logical_to_physical[col_logical_idx];
 
-    void moveCol(int64_t from_idx, int64_t to_idx) {
-        uint64_t from_logical_idx = abs_index(from_idx, logical_to_physical_idx_col.size());
-        uint64_t to_logical_idx = abs_index(to_idx, logical_to_physical_idx_col.size());
-        if (from_logical_idx == to_logical_idx) return;
-
-        if (from_logical_idx < to_logical_idx) {
-            std::rotate(
-                logical_to_physical_idx_col.begin() + from_logical_idx,
-                logical_to_physical_idx_col.begin() + from_logical_idx + 1,
-                logical_to_physical_idx_col.begin() + to_logical_idx + 1
-            );
+            col_name_pool.erase(cols[col_physical_idx]);
+            col_idx_logical_to_physical.erase(col_idx_logical_to_physical.begin() + col_logical_idx);
+            
+            action.col_log.push_back(col_logical_idx);
+            action.col_phy.push_back(col_physical_idx);
+            action.col_nme.push_back(cols[col_physical_idx]);
         }
-        else {
-            std::rotate(
-                logical_to_physical_idx_col.begin() + to_logical_idx,
-                logical_to_physical_idx_col.begin() + from_logical_idx,
-                logical_to_physical_idx_col.begin() + from_logical_idx + 1
-            );
-        }
-
-        pushUndo(Action{ ActionType::MoveCol });
-    }
-
-    void moveRow(int64_t from_idx, int64_t to_idx) {
-        uint64_t from_logical_idx = abs_index(from_idx, logical_to_physical_idx_row.size());
-        uint64_t to_logical_idx = abs_index(to_idx, logical_to_physical_idx_row.size());
-        if (from_logical_idx == to_logical_idx) return;
-
-        if (from_logical_idx < to_logical_idx) {
-            std::rotate(
-                logical_to_physical_idx_row.begin() + from_logical_idx,
-                logical_to_physical_idx_row.begin() + from_logical_idx + 1,
-                logical_to_physical_idx_row.begin() + to_logical_idx + 1
-            );
-        }
-        else {
-            std::rotate(
-                logical_to_physical_idx_row.begin() + to_logical_idx,
-                logical_to_physical_idx_row.begin() + from_logical_idx,
-                logical_to_physical_idx_row.begin() + from_logical_idx + 1
-            );
-        }
-
-        pushUndo(Action{ ActionType::MoveRow });
     }
 
 
-    //--------------------------------------------------------------------------------------------------------
+public:
 
-    void undo() {}
-    void redo() {}
+    void undo() {
+        if (undo_stack.empty()) return;
+
+        redo_stack.emplace(undo_stack.top());
+        auto& action = *(undo_stack.top());
+        undo_stack.pop();
+
+        switch (action.typ) {
+            case ActionType::SetVal: {
+                auto it_row_phy = action.row_phy.rbegin();
+                auto it_col_phy = action.col_phy.rbegin();
+                auto it_old_val = action.old_val.rbegin();
+
+                for (; it_row_phy != action.row_phy.rend(); ++it_row_phy, ++it_col_phy, ++it_old_val) {
+                    auto& row = rows[*it_row_phy];
+                    auto& col = cols[*it_col_phy];
+                    row[col] = *it_old_val;
+                }
+
+                break;
+            }
+
+            case ActionType::AddRow: {
+                auto it_row_log = action.row_log.rbegin();
+
+                for (; it_row_log != action.row_log.rend(); ++it_row_log)
+                    row_idx_logical_to_physical.erase(row_idx_logical_to_physical.begin() + *it_row_log);
+
+                break;
+            }
+
+            case ActionType::AddCol: {
+                auto it_col_log = action.col_log.rbegin();
+                auto it_col_nme = action.col_nme.rbegin();
+
+                for (; it_col_log != action.col_log.rend(); ++it_col_log, ++it_col_nme) {
+                    col_name_pool.erase(*it_col_nme);
+                    col_idx_logical_to_physical.erase(col_idx_logical_to_physical.begin() + *it_col_log);
+                }
+
+                break;
+            }
+
+            case ActionType::DelRow: {
+                auto it_row_log = action.row_log.rbegin();
+                auto it_row_phy = action.row_phy.rbegin();
+
+                for (; it_row_log != action.row_log.rend(); ++it_row_log, ++it_row_phy)
+                    row_idx_logical_to_physical.insert(row_idx_logical_to_physical.begin() + *it_row_log, *it_row_phy);
+
+                break;
+            }
+
+            case ActionType::DelCol: {
+                auto it_col_log = action.col_log.rbegin();
+                auto it_col_phy = action.col_phy.rbegin();
+                auto it_col_nme = action.col_nme.rbegin();
+
+                for (; it_col_log != action.col_log.rend(); ++it_col_log, ++it_col_phy, ++it_col_nme) {
+                    col_name_pool.insert(*it_col_nme);
+                    col_idx_logical_to_physical.insert(col_idx_logical_to_physical.begin() + *it_col_log, *it_col_phy);
+                }
+                break;
+            }
+
+
+            default:
+                break;
+        }
+    }
+
+    void redo() {
+        if (redo_stack.empty()) return;
+
+        undo_stack.emplace(redo_stack.top());
+        auto& action = *(redo_stack.top());
+        redo_stack.pop();
+
+        switch (action.typ) {
+            case ActionType::SetVal: {
+                auto it_row_phy = action.row_phy.begin();
+                auto it_col_phy = action.col_phy.begin();
+                auto it_new_val = action.new_val.begin();
+
+                for (; it_row_phy != action.row_phy.end(); ++it_row_phy, ++it_col_phy, ++it_new_val) {
+                    auto& row = rows[*it_row_phy];
+                    auto& col = cols[*it_col_phy];
+                    row[col] = *it_new_val;
+                }
+
+                break;
+            }
+
+            case ActionType::AddRow: {
+                auto it_row_log = action.row_log.begin();
+                auto it_row_phy = action.row_phy.begin();
+
+                for (; it_row_log != action.row_log.end(); ++it_row_log, ++it_row_phy)
+                    row_idx_logical_to_physical.insert(row_idx_logical_to_physical.begin() + *it_row_log, *it_row_phy);
+
+                break;
+            }
+
+            case ActionType::AddCol: {
+                auto it_col_log = action.col_log.begin();
+                auto it_col_phy = action.col_phy.begin();
+                auto it_col_nme = action.col_nme.begin();
+
+                for (; it_col_log != action.col_log.end(); ++it_col_log, ++it_col_phy, ++it_col_nme) {
+                    col_name_pool.insert(*it_col_nme);
+                    col_idx_logical_to_physical.insert(col_idx_logical_to_physical.begin() + *it_col_log,*it_col_phy);
+                }
+
+                break;
+            }
+
+            case ActionType::DelRow: {
+                auto it_row_log = action.row_log.begin();
+
+                for (; it_row_log != action.row_log.end(); ++it_row_log)
+                    row_idx_logical_to_physical.erase(row_idx_logical_to_physical.begin() + *it_row_log);
+
+                break;
+            }
+
+            case ActionType::DelCol: {
+                auto it_col_log = action.col_log.begin();
+                auto it_col_nme = action.col_nme.begin();
+
+                for (; it_col_log != action.col_log.end(); ++it_col_log, ++it_col_nme) {
+                    col_name_pool.erase(*it_col_nme);
+                    col_idx_logical_to_physical.erase(col_idx_logical_to_physical.begin() + *it_col_log);
+                }
+                break;
+            }
+
+
+            default:
+                break;
+        }
+
+    }
 
 private:
 
@@ -350,7 +345,7 @@ private:
         if (index < 0) index += size;
         if (index >= size)
             throw std::out_of_range("Index out of range.");
-        // throw pybind11::index_error("Index out of range.");
+            // throw pybind11::index_error("Index out of range.");
         return static_cast<uint64_t>(index);
     }
 
@@ -362,97 +357,84 @@ private:
         return logicals;
     }
 
-    std::list<std::tuple<uint64_t, std::string>> abs_index(const std::list<std::tuple<int64_t, std::string>>& indexed_names, uint64_t size) const {
-        std::list<std::tuple<uint64_t, std::string>> logicals;
-        for (const auto& [idx, name] : indexed_names)
-            logicals.emplace_back(abs_index(idx, size), name);
-        logicals.sort([](const auto& a, const auto& b) { return std::get<0>(a) > std::get<0>(b); });
-        return logicals;
-    }
-
-    void fillCol(const std::string& col_name) {
-        for (row_ptr& row : table) {
-            string_ptr interned_string = internString("");
-            (*row)[col_name] = interned_string;
-        }
-    }
-
-    string_ptr internString(const std::string& str) {
-        auto [it, inserted] = value_pool.emplace(std::make_shared<std::string>(str));
-        return *it;
-    }
-
-    void pushUndo(Action action) {
-        undo_stack.push(action);
+    Action& pushUndo(ActionType action_type) {
+        undo_stack.emplace(std::make_shared<Action>(action_type));
         while (!redo_stack.empty()) redo_stack.pop();
+        return *(undo_stack.top());
     }
 
 public:
-    void print(std::ostream& os = std::cout) const {
-        constexpr size_t MAX_COL_WIDTH = 15;
-
-        os << "Strings: ";
-        for (const auto& value_ptr : value_pool)
-            os << (*value_ptr) << " (" << value_ptr.use_count() << ")" << ", ";
-        os << "\n";
-
-        os << "Columns: ";
-        for (const auto& col_name : col_name_pool)
-            os << (*col_name) << " (" << col_name.use_count() << ")" << ", ";
-        os << "\n\n";
-
-        std::unordered_map<std::string, size_t> column_widths;
-
-        os << "logical_to_physical_idx_row: ";
-        for (const auto& row_phy : logical_to_physical_idx_row) {
-            os << row_phy << ", ";
+    void print(std::ostream& os = std::cout) {
+        os << "\ncol_name_pool: ";
+        uint64_t i=0;
+        for (const auto& col_name : col_name_pool) {
+            os << "\"" << col_name << "\"";
+            if (i + 1 < row_idx_logical_to_physical.size()) os << ", ";
+            ++i;
         }
-        os << "\n";
 
-        os << "logical_to_physical_idx_col: ";
-        for (const auto& col_phy : logical_to_physical_idx_col) {
-            os << *col_phy << ", ";
-            column_widths[(*col_phy)] = std::min((*col_phy).size(), MAX_COL_WIDTH);
+        os << "\nrow_idx: ";
+        for (size_t i = 0; i < row_idx_logical_to_physical.size(); ++i) {
+            os << row_idx_logical_to_physical[i];
+            if (i + 1 < row_idx_logical_to_physical.size()) os << ", ";
+        }
+
+        os << "\ncol_idx: ";
+        for (size_t i = 0; i < col_idx_logical_to_physical.size(); ++i) {
+            os << col_idx_logical_to_physical[i];
+            if (i + 1 < col_idx_logical_to_physical.size()) os << ", ";
         }
         os << "\n\n";
 
-        for (const auto& row : table)
-            for (const auto& col_name : logical_to_physical_idx_col)
-                column_widths[*col_name] = std::max(column_widths[*col_name], std::min((*(*row)[*col_name]).size(), MAX_COL_WIDTH));
+        std::unordered_map<std::string, size_t> col_widths;
+        for (const auto& col : cols) {
+            col_widths[col] = col.size();
+            for (auto& row : rows)
+                col_widths[col] = std::max(col_widths[col], (row[col]).size());
+        }
 
-        auto print_separator = [&]() {
-            os << "*";
-            for (const auto& col_name : logical_to_physical_idx_col)
-                os << std::string(column_widths[*col_name] + 2, '-') << "*";
-            os << "\n";
-            };
 
-        print_separator();
-
-        os << "|";
-        for (const auto& col_name : logical_to_physical_idx_col)
-            os << " " << std::setw(column_widths[*col_name]) << std::left << *col_name << " |";
-        os << "\n";
-
-        os << "*";
-        for (const auto& col_name : logical_to_physical_idx_col)
-            os << std::string(column_widths[*col_name] + 2, '#') << "*";
-
-        // Print data rows
-        for (const auto& row_physical_idx : logical_to_physical_idx_row) {
-            const auto& row = table[row_physical_idx];
-            os << "|";
-            for (const auto& col_name : logical_to_physical_idx_col) {
-                std::string value(*((*row)[*col_name]));
-                if (value.size() > column_widths[*col_name])
-                    value = value.substr(0, column_widths[*col_name] - 3) + "...";
-                os << " " << std::setw(column_widths[*col_name]) << std::left << value << " |";
+        auto printBorder = [&](const auto& col_order, char corner, char fill) {
+            os << corner;
+            for (size_t i : col_order) {
+                os << std::string(col_widths[cols[i]] + 2, fill) << corner;
             }
             os << "\n";
-            print_separator();
-        }
+        };
 
+        auto printTable = [&](const std::vector<size_t>& row_order, const std::vector<size_t>& col_order) {
+            printBorder(col_order,'+', '-');
+            os << "|";
+            for (size_t col_i : col_order) {
+                os << " " << std::setw(col_widths[cols[col_i]]) << cols[col_i] << " |";
+            }
+            os << "\n";
+            printBorder(col_order,'+', '=');
+
+            for (size_t row_i : row_order) {
+                auto& row = rows[row_i];
+                os << "|";
+                for (size_t col_i : col_order) 
+                    os << " " << std::setw(col_widths[cols[col_i]]) << row[cols[col_i]] << " |";
+                os << "\n";
+                printBorder(col_order,'+', '-');
+            }
+        };
+
+        std::vector<size_t> true_row_order(rows.size());
+        std::iota(true_row_order.begin(), true_row_order.end(), 0);
+        std::vector<size_t> true_col_order(cols.size());
+        std::iota(true_col_order.begin(), true_col_order.end(), 0);
+        
+        os << "\n  === TABLE (Physical Order) ===\n\n";
+        printTable(true_row_order, true_col_order);
+
+        os << "\n  === TABLE (Logical Order) ===\n\n";
+        printTable(row_idx_logical_to_physical, col_idx_logical_to_physical);
+
+        os << "\n";
     }
+
 
 };
 
