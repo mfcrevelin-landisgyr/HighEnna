@@ -24,9 +24,9 @@
 
  #include <chrono>
 #include <memory>
-// #include <thread>
+ #include <thread>
 // #include <atomic>
-// #include <mutex>
+ #include <mutex>
 #include <numeric>
 
 #include <unordered_set>
@@ -44,7 +44,7 @@
 using namespace std::chrono_literals;
 
 //#include <pybind11/pybind11.h>
-// #include <pybind11/eval.h>
+//#include <pybind11/eval.h>
 //#include <pybind11/stl.h>
 
 #define NOMINMAX
@@ -67,11 +67,26 @@ namespace std {
     };
 }
 
+template<std::size_t R, typename Func, typename... Args>
+void applyDFA(const uint8_t (&dfa)[R][256], const std::string_view& buffer, Func&& func, Args&&... args) {
+    uint64_t ptr = 0;
+    uint16_t transition = 0;
+    uint8_t& state  = *(reinterpret_cast<uint8_t*>(&transition) + 0); // Least significant byte on LE systems, Most  in BE ones. 
+    uint8_t& pstate = *(reinterpret_cast<uint8_t*>(&transition) + 1); // Most  significant byte on LE systems, Least in BE ones. 
+
+    while (ptr < buffer.size()) {
+        pstate = state;
+        state = dfa[state][static_cast<uint8_t>(buffer[ptr])];
+        func(transition, state, ptr, std::forward<Args>(args)...);
+        ++ptr;
+    }
+}
+
 // #include "task_counter.h"
 // #include "encoding.h"
 // #include "python_executor.h"
 #include "dataframe.h"
- #include "file_handler.h"
+#include "file_handler.h"
 // #include "tpl_project.h"
 //#include "module.h"
 
