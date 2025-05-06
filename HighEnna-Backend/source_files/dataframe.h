@@ -9,10 +9,10 @@ private:
     enum class ActionType {
         SetVal,
         AddRow,
-        DelRow,
-        MovRow,
         AddCol,
+        DelRow,
         DelCol,
+        MovRow,
         MovCol,
     };
 
@@ -30,11 +30,7 @@ private:
 
 private:
 
-
     std::unordered_set<std::string> col_name_pool;
-
-    std::vector<uint64_t> row_map_logical_to_physical;
-    std::vector<uint64_t> col_map_logical_to_physical;
 
     std::vector<std::unordered_map<std::string,std::string>> rows;
     std::vector<std::string> cols;
@@ -43,6 +39,9 @@ private:
     std::stack<std::shared_ptr<Action>> redo_stack;
 
 public:
+
+    std::vector<uint64_t> row_map_logical_to_physical;
+    std::vector<uint64_t> col_map_logical_to_physical;
 
     size_t rowCount() const { return row_map_logical_to_physical.size(); }
     size_t colCount() const { return col_map_logical_to_physical.size(); }

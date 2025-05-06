@@ -43,9 +43,9 @@
 
 using namespace std::chrono_literals;
 
-//#include <pybind11/pybind11.h>
-//#include <pybind11/eval.h>
-//#include <pybind11/stl.h>
+#include <pybind11/embed.h>
+#include <pybind11/eval.h>
+#include <pybind11/stl.h>
 
 #define NOMINMAX
 #include <windows.h>
@@ -77,7 +77,7 @@ void applyDFA(const uint8_t (&dfa)[R][256], const std::string_view& buffer, Func
     while (ptr < buffer.size()) {
         pstate = state;
         state = dfa[state][static_cast<uint8_t>(buffer[ptr])];
-        func(transition, state, ptr, std::forward<Args>(args)...);
+        func(transition, ptr, std::forward<Args>(args)...);
         ++ptr;
     }
 }
