@@ -50,7 +50,7 @@ using namespace std::chrono_literals;
 #define NOMINMAX
 #include <windows.h>
 
-namespace std {
+/*namespace std {
     template <typename... Args>
     struct hash<std::tuple<Args...>> {
         std::size_t operator()(const std::tuple<Args...>& t) const {
@@ -65,7 +65,7 @@ namespace std {
             return h;
         }
     };
-}
+}*/
 
 template<std::size_t R, typename Func, typename... Args>
 void applyDFA(const uint8_t (&dfa)[R][256], const std::string_view& buffer, Func&& func, Args&&... args) {

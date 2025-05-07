@@ -33,15 +33,18 @@ private:
     std::unordered_set<std::string> col_name_pool;
 
     std::vector<std::unordered_map<std::string,std::string>> rows;
+    std::vector<pybind11::dict> globals;
     std::vector<std::string> cols;
+
+    std::unordered_set<uint64_t> changed_globals_physical_idx;
+
+    std::vector<uint64_t> row_map_logical_to_physical;
+    std::vector<uint64_t> col_map_logical_to_physical;
 
     std::stack<std::shared_ptr<Action>> undo_stack;
     std::stack<std::shared_ptr<Action>> redo_stack;
 
 public:
-
-    std::vector<uint64_t> row_map_logical_to_physical;
-    std::vector<uint64_t> col_map_logical_to_physical;
 
     size_t rowCount() const { return row_map_logical_to_physical.size(); }
     size_t colCount() const { return col_map_logical_to_physical.size(); }
@@ -60,7 +63,7 @@ public:
         return rows[row_physical_idx];
     }
 
-    std::string getVal(int64_t row_idx, int64_t col_idx) {
+    std::string getCell(int64_t row_idx, int64_t col_idx) {
 
         uint64_t row_logical_idx = abs_index(row_idx, row_map_logical_to_physical.size());
         uint64_t col_logical_idx = abs_index(col_idx, col_map_logical_to_physical.size());
@@ -74,29 +77,59 @@ public:
         return row[col];
     }
 
-    void set(const std::list<std::tuple<int64_t, int64_t, std::string>>& items) {
+    void setCell(const std::list<std::tuple<int64_t, int64_t, std::string>>& items) {
         auto& action = pushUndo(ActionType::SetVal);
 
-        for (const auto& [row_idx, col_idx, val] : items) {
+        if (!items.empty()) {
+            pybind11::gil_scoped_acquire gil;
+            for (const auto& [row_idx, col_idx, val] : items) {
 
-            uint64_t row_logical_idx = abs_index(row_idx, row_map_logical_to_physical.size());
-            uint64_t col_logical_idx = abs_index(col_idx, col_map_logical_to_physical.size());
+                uint64_t row_logical_idx = abs_index(row_idx, row_map_logical_to_physical.size());
+                uint64_t col_logical_idx = abs_index(col_idx, col_map_logical_to_physical.size());
 
-            uint64_t row_physical_idx = row_map_logical_to_physical[row_logical_idx];
-            uint64_t col_physical_idx = col_map_logical_to_physical[col_logical_idx];
+                uint64_t row_physical_idx = row_map_logical_to_physical[row_logical_idx];
+                uint64_t col_physical_idx = col_map_logical_to_physical[col_logical_idx];
 
-            auto& row = rows[row_physical_idx];
-            auto& col = cols[col_physical_idx];
+                auto& global = globals[row_physical_idx];
+                auto& row = rows[row_physical_idx];
+                auto& col = cols[col_physical_idx];
 
-            std::string old = row[col];
+                std::string old = row[col];
 
-            action.row_phy.push_back(row_physical_idx);
-            action.col_phy.push_back(col_physical_idx);
-            action.col_nme.push_back(col);
-            action.new_val.push_back(val);
-            action.old_val.push_back(old);
+                action.row_phy.push_back(row_physical_idx);
+                action.col_phy.push_back(col_physical_idx);
+                action.col_nme.push_back(col);
+                action.new_val.push_back(val);
+                action.old_val.push_back(old);
 
-            row[col] = val;
+                row[col] = val;
+
+                // try {
+                    if (val.empty())
+                        global.attr("pop")("var_" + col, pybind11::none());
+                    else
+                        pybind11::exec("var_"+col+" = "+val, global);
+
+                    std::cout << row_logical_idx << ", " << col_logical_idx << ", \"" << val << "\" -> {";
+                    uint64_t i=0;
+                    for (auto item : global) {
+                        std::string key = pybind11::str(item.first);
+                        if (key == "__builtins__")
+                            continue;
+                        std::cout << key << ": \"" << pybind11::str(item.second) << "\"";
+                        auto xx = global.attr("__len__")();
+                        if (i+1<pybind11::int_(global.attr("__len__")()))
+                            std::cout << ", ";
+                        ++i;
+                    }
+                    std::cout << "}" << std::endl;
+                // }
+                // catch (pybind11::error_already_set& e) {
+                    // std::cerr << e.what() << std::endl;
+                    // e.restore();
+                    // throw e;
+                // }
+            }
         }
     }
 
@@ -105,24 +138,34 @@ public:
     void addRow(int64_t n_rows) {
         auto& action = pushUndo(ActionType::AddRow);
 
-        for (int64_t i=0; i<n_rows; ++i) {
-            uint64_t row_logical_idx = row_map_logical_to_physical.size();
-            rows.emplace_back();
-            row_map_logical_to_physical.insert(row_map_logical_to_physical.begin() + row_logical_idx, rows.size() - 1);
-            action.row_lgc.push_back(row_logical_idx);
-            action.row_phy.push_back(rows.size() - 1);
+        if (n_rows) {
+            pybind11::gil_scoped_acquire gil;
+            for (int64_t i=0; i<n_rows; ++i) {
+                uint64_t row_logical_idx = row_map_logical_to_physical.size();
+                rows.emplace_back();
+                globals.emplace_back();
+                globals[globals.size()-1]["__builtins__"] = pybind11::module::import("builtins").attr("__dict__");
+                row_map_logical_to_physical.insert(row_map_logical_to_physical.begin() + row_logical_idx, rows.size() - 1);
+                action.row_lgc.push_back(row_logical_idx);
+                action.row_phy.push_back(rows.size() - 1);
+            }
         }
     }
 
     void addRow(const std::list<int64_t>& row_indexes) {
         auto& action = pushUndo(ActionType::AddRow);
 
-        std::list<uint64_t> row_logicals = abs_index(row_indexes, row_map_logical_to_physical.size()+1);
-        for (uint64_t row_logical_idx : row_logicals) {
-            rows.emplace_back();
-            row_map_logical_to_physical.insert(row_map_logical_to_physical.begin() + row_logical_idx, rows.size() - 1);
-            action.row_lgc.push_back(row_logical_idx);
-            action.row_phy.push_back(rows.size() - 1);
+        std::list<uint64_t> row_logical_indexes = abs_index(row_indexes, row_map_logical_to_physical.size()+1);
+        if (!row_logical_indexes.empty()){
+            pybind11::gil_scoped_acquire gil;
+            for (uint64_t row_logical_idx : row_logical_indexes) {
+                rows.emplace_back();
+                globals.emplace_back();
+                globals[globals.size()-1]["__builtins__"] = pybind11::module::import("builtins").attr("__dict__");
+                row_map_logical_to_physical.insert(row_map_logical_to_physical.begin() + row_logical_idx, rows.size() - 1);
+                action.row_lgc.push_back(row_logical_idx);
+                action.row_phy.push_back(rows.size() - 1);
+            }
         }
     }
 
@@ -130,21 +173,25 @@ public:
         pushUndo(ActionType::AddRow);
         auto& action = *(undo_stack.top());
 
-        std::list<uint64_t> row_logicals = abs_index(row_indexes, row_map_logical_to_physical.size());
-        for (uint64_t row_logical_idx : row_logicals) {
-            uint64_t row_physical_idx = row_map_logical_to_physical[row_logical_idx];
-            rows.emplace_back(rows[row_physical_idx]);
-            row_map_logical_to_physical.insert(row_map_logical_to_physical.begin() + row_logical_idx+1, rows.size() - 1);
-            action.row_lgc.push_back(row_logical_idx+1);
-            action.row_phy.push_back(rows.size() - 1);
+        std::list<uint64_t> row_logical_indexes = abs_index(row_indexes, row_map_logical_to_physical.size());
+        if (!row_logical_indexes.empty()){
+            pybind11::gil_scoped_acquire gil;
+            for (uint64_t row_logical_idx : row_logical_indexes) {
+                uint64_t row_physical_idx = row_map_logical_to_physical[row_logical_idx];
+                rows.emplace_back(rows[row_physical_idx]);
+                globals.emplace_back(globals[row_physical_idx]);
+                row_map_logical_to_physical.insert(row_map_logical_to_physical.begin() + row_logical_idx+1, rows.size() - 1);
+                action.row_lgc.push_back(row_logical_idx+1);
+                action.row_phy.push_back(rows.size() - 1);
+            }
         }
     }
 
     void delRow(const std::list<int64_t>& row_indexes) {
         auto& action = pushUndo(ActionType::DelRow);
 
-        std::list<uint64_t> row_logicals = abs_index(row_indexes, row_map_logical_to_physical.size());
-        for (uint64_t row_logical_idx : row_logicals) {
+        std::list<uint64_t> row_logical_indexes = abs_index(row_indexes, row_map_logical_to_physical.size());
+        for (uint64_t row_logical_idx : row_logical_indexes) {
             uint64_t row_physical_idx = row_map_logical_to_physical[row_logical_idx];
             action.row_lgc.push_back(row_logical_idx);
             action.row_phy.push_back(row_physical_idx);
@@ -518,11 +565,11 @@ private:
     }
 
     std::list<uint64_t> abs_index(const std::list<int64_t>& indexes, uint64_t size) const {
-        std::list<uint64_t> logicals;
+        std::list<uint64_t> logical_indexes;
         for (int64_t idx : indexes)
-            logicals.push_back(abs_index(idx, size));
-        logicals.sort(std::greater<>());
-        return logicals;
+            logical_indexes.push_back(abs_index(idx, size));
+        logical_indexes.sort(std::greater<>());
+        return logical_indexes;
     }
 
     Action& pushUndo(ActionType action_type) {
@@ -560,7 +607,6 @@ public:
             for (auto& row : rows)
                 col_widths[col] = std::max(col_widths[col], (row[col]).size());
         }
-
 
         auto printBorder = [&](const auto& col_order, char corner, char fill) {
             os << corner;

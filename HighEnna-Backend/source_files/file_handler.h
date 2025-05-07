@@ -67,7 +67,7 @@ public:
         };
 
         struct PlainText : Generator {
-            PlainText(const std::string_view& view) : buffer(view) {}
+            PlainText(const char* ptr, size_t size) : buffer(ptr, size) {}
 
             std::shared_ptr<pybind11::error_already_set> write(uint64_t script_index, std::ofstream& out_file) const override { out_file << buffer; }
             void precompute(uint64_t script_index, const pybind11::dict& globals) override {}
@@ -76,13 +76,14 @@ public:
         };
 
         struct Expression : Generator {
-            Expression(const std::string_view view) : buffer(view) {}
+            Expression(const char* ptr, size_t size) : buffer(ptr, size) {}
 
             std::shared_ptr<pybind11::error_already_set> write(uint64_t script_index, std::ofstream& out_file) const override {
                 if (auto it = error_cache.find(script_index); it != error_cache.end() && it->second)
                     return it->second;
                 out_file << output_cache.at(script_index);
             }
+
             void precompute(uint64_t script_index, const pybind11::dict& globals) override {
                 try {
                     output_cache[script_index] = pybind11::str(pybind11::eval(buffer, globals));
@@ -96,8 +97,6 @@ public:
 
             std::string_view buffer;
         };
-
-        std::list<std::shared_ptr<Generator>> file_template;
 
     public:
 
@@ -154,54 +153,67 @@ public:
 
             const char* content_beg = content_buffer.get();
 
-            size_t expression_start_idx, name_start_idx;
+            uint64_t name_start_idx, expression_start_idx;
+            uint64_t text_start_idx = 0, text_end_idx;
             bool val_not_var;
 
             applyDFA(file_dfa,content,[&](uint16_t& transition, uint64_t& idx) {
                 switch (transition) {
                     case 0x0001:
                     case 0x0101:
-                    case 0x0201: {
-                        line_indices.push_back(idx + 1);
-                    } break;
-                    case 0x0305:
-                    case 0x0405:
-                        line_indices.push_back(idx + 1);
-                    case 0x0306:
-                    case 0x0406: {
-                        expression_start_idx = idx;
-                    } break;
-                    case 0x0809: {
-                        val_not_var=true;
-                    } break;
-                    case 0x080A: {
-                        val_not_var=false;
-                    } break;
-                    case 0x0B0C: {
-                        name_start_idx = idx;
-                    } break;
+                    case 0x0201:
                     case 0x0505:
                     case 0x0605:
                     case 0x0705:
                     case 0x0805:
                     case 0x0905:
                     case 0x0A05:
-                    case 0x0D05: {
+                    case 0x0D05:
                         line_indices.push_back(idx + 1);
-                    } break;
+                        break;
+                    case 0x0002:
+                    case 0x0102:
+                        text_end_idx = idx;
+                        break;
+                    case 0x0203:
+                        blueprint.emplace_back(std::make_unique<PlainText>(content_beg + text_start_idx, text_end_idx - text_start_idx));
+                        break;
+                    case 0x0305:
+                    case 0x0405:
+                        line_indices.push_back(idx + 1);
+                    case 0x0306:
+                    case 0x0406:
+                    case 0x0307:
+                    case 0x0407:
+                        expression_start_idx = idx;
+                        break;
                     case 0x0C05:
                         line_indices.push_back(idx + 1);
                     case 0x0C06:
-                    case 0x0C0D: {
+                    case 0x0C0D:
                         if (val_not_var)
                             values.emplace(content_beg+name_start_idx,idx-name_start_idx);
-                        else:
+                        else
                             variables.emplace(content_beg+name_start_idx,idx-name_start_idx);
-                    } break;
+                        break;
+                    case 0x0809:
+                        val_not_var=true;
+                        break;
+                    case 0x080A:
+                        val_not_var=false;
+                        break;
+                    case 0x0B0C:
+                        name_start_idx = idx;
+                        break;
+                    case 0x0D00:
+                        blueprint.emplace_back(std::make_unique<Expression>(content_beg + text_start_idx, text_end_idx - text_start_idx));
+                        break;
                 }
             });
 
         }
+
+        std::list<std::unique_ptr<Generator>> blueprint;
 
         std::vector<uint64_t> line_indices = {0};
         std::unordered_set<std::string_view> values;
