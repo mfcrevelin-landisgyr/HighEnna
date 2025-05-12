@@ -47,6 +47,16 @@ public:
     size_t rowCount() const { return row_map_logical_to_physical.size(); }
     size_t colCount() const { return col_map_logical_to_physical.size(); }
 
+    size_t rowPhys(int64_t row_idx) const { 
+        uint64_t row_logical_idx = abs_index(row_idx,row_map_logical_to_physical.size());
+        return row_map_logical_to_physical[row_logical_idx];
+    }
+
+    size_t colPhys(int64_t col_idx) const { 
+        uint64_t col_logical_idx = abs_index(col_idx,col_map_logical_to_physical.size());
+        return col_map_logical_to_physical[col_logical_idx];
+    }
+
 public:
 
     std::string getCol(int64_t col_idx) {
@@ -55,7 +65,7 @@ public:
         return cols[col_physical_idx];
     }
 
-    std::unordered_map<std::string,std::string> getRow(int64_t row_idx) {
+    std::unordered_map<std::string,std::string>& getRow(int64_t row_idx) {
         uint64_t row_logical_idx = abs_index(row_idx, row_map_logical_to_physical.size());
         uint64_t row_physical_idx = row_map_logical_to_physical[row_logical_idx];
         return rows[row_physical_idx];
@@ -271,7 +281,7 @@ public:
                     row[col] = *it_old_val;
                 }
 
-                break;
+                return;
             }
 
             case ActionType::AddRow: {
@@ -280,7 +290,7 @@ public:
                 for (; it_row_lgc != action.row_lgc.rend(); ++it_row_lgc)
                     row_map_logical_to_physical.erase(row_map_logical_to_physical.begin() + *it_row_lgc);
 
-                break;
+                return;
             }
 
             case ActionType::AddCol: {
@@ -292,7 +302,7 @@ public:
                     col_map_logical_to_physical.erase(col_map_logical_to_physical.begin() + *it_col_lgc);
                 }
 
-                break;
+                return;
             }
 
             case ActionType::DelRow: {
@@ -302,7 +312,7 @@ public:
                 for (; it_row_lgc != action.row_lgc.rend(); ++it_row_lgc, ++it_row_phy)
                     row_map_logical_to_physical.insert(row_map_logical_to_physical.begin() + *it_row_lgc, *it_row_phy);
 
-                break;
+                return;
             }
 
             case ActionType::DelCol: {
@@ -314,11 +324,11 @@ public:
                     col_name_pool.insert(*it_col_nme);
                     col_map_logical_to_physical.insert(col_map_logical_to_physical.begin() + *it_col_lgc, *it_col_phy);
                 }
-                break;
+                return;
             }
 
             case ActionType::MovCol: {
-                if (action.col_lgc.empty()) break;
+                if (action.col_lgc.empty()) return;
                 auto it_col_lgc = action.col_lgc.rbegin();
 
                 uint64_t logical_idx_from  = *(it_col_lgc++);
@@ -339,11 +349,11 @@ public:
                     );
                 }
 
-                break;
+                return;
             }
 
             case ActionType::MovRow: {
-                if (action.row_lgc.empty()) break;
+                if (action.row_lgc.empty()) return;
                 auto it_row_lgc = action.row_lgc.rbegin();
 
                 uint64_t logical_idx_from  = *(it_row_lgc++);
@@ -364,11 +374,8 @@ public:
                     );
                 }
                 
-                break;
+                return;
             }
-
-            default:
-                break;
         }
     }
 
@@ -391,7 +398,7 @@ public:
                     row[col] = *it_new_val;
                 }
 
-                break;
+                return;
             }
 
             case ActionType::AddRow: {
@@ -401,7 +408,7 @@ public:
                 for (; it_row_lgc != action.row_lgc.end(); ++it_row_lgc, ++it_row_phy)
                     row_map_logical_to_physical.insert(row_map_logical_to_physical.begin() + *it_row_lgc, *it_row_phy);
 
-                break;
+                return;
             }
 
             case ActionType::AddCol: {
@@ -414,7 +421,7 @@ public:
                     col_map_logical_to_physical.insert(col_map_logical_to_physical.begin() + *it_col_lgc,*it_col_phy);
                 }
 
-                break;
+                return;
             }
 
             case ActionType::DelRow: {
@@ -423,7 +430,7 @@ public:
                 for (; it_row_lgc != action.row_lgc.end(); ++it_row_lgc)
                     row_map_logical_to_physical.erase(row_map_logical_to_physical.begin() + *it_row_lgc);
 
-                break;
+                return;
             }
 
             case ActionType::DelCol: {
@@ -434,11 +441,11 @@ public:
                     col_name_pool.erase(*it_col_nme);
                     col_map_logical_to_physical.erase(col_map_logical_to_physical.begin() + *it_col_lgc);
                 }
-                break;
+                return;
             }
 
             case ActionType::MovCol: {
-                if (action.col_lgc.empty()) break;
+                if (action.col_lgc.empty()) return;
                 auto it_col_lgc = action.col_lgc.begin();
 
                 uint64_t logical_idx_from = *(it_col_lgc++);
@@ -459,11 +466,11 @@ public:
                     );
                 }
 
-                break;
+                return;
             }
 
             case ActionType::MovRow: {
-                if (action.row_lgc.empty()) break;
+                if (action.row_lgc.empty()) return;
                 auto it_row_lgc = action.row_lgc.begin();
 
                 uint64_t logical_idx_from = *(it_row_lgc++);
@@ -484,12 +491,8 @@ public:
                     );
                 }
                 
-                break;
+                return;
             }
-
-
-            default:
-                break;
         }
 
     }
@@ -565,7 +568,7 @@ public:
                 col_widths[col] = std::max(col_widths[col], (row[col]).size());
         }
 
-        auto printBorder = [&](const auto& col_order, char corner, char fill) {
+        auto printBorder = [&](const auto& col_order, char corner, char \\l) {
             os << corner;
             for (size_t i : col_order) {
                 os << std::string(col_widths[cols[i]] + 2, fill) << corner;

@@ -16,7 +16,6 @@ struct FileHandler{
 private:
 
     std::mutex operation_mutex;
-    std::mutex queue_mutex;
 
 private:    
 
@@ -45,7 +44,54 @@ private:
         }
     }
 
-public:
+private:
+
+    std::mutex queue_mutex;
+    std::queue<uint64_t> precompute_queue;
+    std::condition_variable precompute_cv;
+    bool daemon_running = false;
+    bool shutdown = false;
+
+    void precompute() {
+        std::unique_lock<std::mutex> lock(queue_mutex);
+
+        while (!shutdown) {
+            precompute_cv.wait(lock, [&] { return !precompute_queue.empty() || shutdown; });
+
+            if (shutdown) break;
+
+            daemon_running = true;
+
+            while (!precompute_queue.empty()) {
+                int64_t precompute_index = precompute_queue.front();
+                precompute_queue.pop();
+                lock.unlock();
+
+                uint64_t row_phys_idx = dataframe.rowPhys(precompute_index);
+
+                std::map<std::string, std::string>& row_map = dataframe.getRow(precompute_index);
+
+                pybind11::dict& globals_dict = globals[row_phys_idx];
+                if (globals_dict.is_none() || globals_dict.empty()) {
+                    globals_dict = pybind11::dict(pybind11::module_::import("builtins").attr("__dict__"));
+                }
+
+                for (const auto& [key, value] : row_map) {
+                    globals_dict[pybind11::str(key)] = pybind11::str(value);
+                }
+
+                // --- End implementation ---
+
+                lock.lock();
+            }
+
+            daemon_running = false;
+        }
+    }
+
+    std::unordered_map<uint64_t,pybind11::dict> globals;
+
+private:
 
     std::filesystem::file_time_type read_time, write_time;
 
@@ -246,7 +292,7 @@ public:
     FileData file_data;
     DataFrame dataframe;
 
-public:
+private:
 
     static constexpr uint8_t name_dfa[5][256] = {
         {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
