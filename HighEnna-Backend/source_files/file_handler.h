@@ -11,6 +11,14 @@ struct FileHandler{
                 file_data.parse();
         });
         t.detach();
+
+        precompute_daemon = std::thread(&FileHandler::precompute, this);
+    }
+
+    ~FileHandler() {
+        shutdown = true;
+        precompute_cv.notify_one();
+        precompute_daemon.join();
     }
 
 private:
@@ -49,6 +57,7 @@ private:
     std::mutex queue_mutex;
     std::queue<uint64_t> precompute_queue;
     std::condition_variable precompute_cv;
+    std::thread precompute_daemon;
     bool daemon_running = false;
     bool shutdown = false;
 
@@ -62,34 +71,53 @@ private:
 
             daemon_running = true;
 
-            while (!precompute_queue.empty()) {
-                int64_t precompute_index = precompute_queue.front();
-                precompute_queue.pop();
-                lock.unlock();
+            {
+                std::scoped_lock operation_lock(operation_mutex);
+                pybind11::gil_scoped_acquire gil;
 
-                uint64_t row_phys_idx = dataframe.rowPhys(precompute_index);
-
-                std::map<std::string, std::string>& row_map = dataframe.getRow(precompute_index);
-
-                pybind11::dict& globals_dict = globals[row_phys_idx];
-                if (globals_dict.is_none() || globals_dict.empty()) {
-                    globals_dict = pybind11::dict(pybind11::module_::import("builtins").attr("__dict__"));
+                while (!precompute_queue.empty()) {
+                    
+                    int64_t logical_idx = precompute_queue.front();
+                    precompute_queue.pop();
+                    lock.unlock();
+    
+                    uint64_t row_phys_idx = dataframe.rowPhys(logical_idx);
+    
+                    std::unordered_map<std::string, std::string>& row_map = dataframe.getRow(logical_idx);
+                    pybind11::dict& globals_dict = globals[row_phys_idx];
+    
+                    try {
+                        if (globals_dict.is_none() || globals_dict.empty())
+                            globals_dict = pybind11::dict(pybind11::module_::import("builtins").attr("__dict__"));
+    
+                        for (const auto& [key, value] : value_map)
+                            globals_dict[pybind11::str("val_"+key)] = pybind11::str(value);
+    
+                        for (const auto& [key, value] : row_map)
+                            globals_dict[pybind11::str("var_"+key)] = pybind11::str(value);
+                    } catch (const pybind11::error_already_set& e) {
+                        error_cache[row_phys_idx] = std::make_shared<pybind11::error_already_set>(std::move(e));
+                    }
+    
+                    lock.lock();
                 }
-
-                for (const auto& [key, value] : row_map) {
-                    globals_dict[pybind11::str(key)] = pybind11::str(value);
-                }
-
-                // --- End implementation ---
-
-                lock.lock();
             }
 
             daemon_running = false;
         }
     }
 
+    std::unordered_map<uint64_t, std::shared_ptr<pybind11::error_already_set>> error_cache;
     std::unordered_map<uint64_t,pybind11::dict> globals;
+
+public:
+
+    ;
+
+private:
+
+    std::unordered_map<std::string, std::string> value_map;
+    DataFrame dataframe;
 
 private:
 
@@ -107,50 +135,11 @@ private:
 
     public:
 
-        struct Generator {
-            virtual std::shared_ptr<pybind11::error_already_set> write(uint64_t, std::ofstream&) const = 0;
-            virtual void precompute(uint64_t, const pybind11::dict&) = 0;
-        };
-
-        struct PlainText : Generator {
-            PlainText(const char* ptr, size_t size) : buffer(ptr, size) {}
-
-            std::shared_ptr<pybind11::error_already_set> write(uint64_t script_index, std::ofstream& out_file) const override { out_file << buffer; }
-            void precompute(uint64_t script_index, const pybind11::dict& globals) override {}
-            
-            std::string_view buffer;
-        };
-
-        struct Expression : Generator {
-            Expression(const char* ptr, size_t size) : buffer(ptr, size) {}
-
-            std::shared_ptr<pybind11::error_already_set> write(uint64_t script_index, std::ofstream& out_file) const override {
-                if (auto it = error_cache.find(script_index); it != error_cache.end() && it->second)
-                    return it->second;
-                out_file << output_cache.at(script_index);
-            }
-
-            void precompute(uint64_t script_index, const pybind11::dict& globals) override {
-                try {
-                    output_cache[script_index] = pybind11::str(pybind11::eval(buffer, globals));
-                } catch (const pybind11::error_already_set& e) {
-                    error_cache[script_index] = std::make_shared<pybind11::error_already_set>(std::move(e));
-                }
-            }
-
-            std::unordered_map<uint64_t, std::shared_ptr<pybind11::error_already_set>> error_cache;
-            std::unordered_map<uint64_t ,std::string> output_cache;
-
-            std::string_view buffer;
-        };
-
-    public:
-
         void load(const std::filesystem::path& file_path) {
             std::ifstream file(file_path, std::ios::ate);
 
             if (!file.is_open()) {
-                status = Status::Valid;
+                status = Status::Invalid;
                 return;
             }
 
@@ -163,7 +152,7 @@ private:
             file.close();
 
             if (error_number) {
-                status = Status::Valid;
+                status = Status::Invalid;
                 return;
             }
 
@@ -259,6 +248,44 @@ private:
 
         }
 
+        struct Generator {
+            Generator(const char* ptr, size_t size) : buffer(ptr, size) {}
+            virtual ~Generator() = default;
+            
+            virtual std::shared_ptr<pybind11::error_already_set> write(uint64_t, std::ofstream&) const = 0;
+            virtual void precompute(uint64_t, const pybind11::dict&) = 0;
+
+            std::string_view buffer;
+        };
+
+        struct PlainText : Generator {
+            using Generator::Generator;
+
+            std::shared_ptr<pybind11::error_already_set> write(uint64_t script_index, std::ofstream& out_file) const override { out_file << buffer; }
+            void precompute(uint64_t script_index, const pybind11::dict& globals) override {}
+        };
+
+        struct Expression : Generator {
+            using Generator::Generator;
+
+            std::shared_ptr<pybind11::error_already_set> write(uint64_t script_index, std::ofstream& out_file) const override {
+                if (auto it = error_cache.find(script_index); it != error_cache.end() && it->second)
+                    return it->second;
+                out_file << output_cache.at(script_index);
+            }
+
+            void precompute(uint64_t script_index, const pybind11::dict& globals) override {
+                try {
+                    output_cache[script_index] = pybind11::str(pybind11::eval(buffer, globals));
+                } catch (const pybind11::error_already_set& e) {
+                    error_cache[script_index] = std::make_shared<pybind11::error_already_set>(std::move(e));
+                }
+            }
+
+            std::unordered_map<uint64_t, std::shared_ptr<pybind11::error_already_set>> error_cache;
+            std::unordered_map<uint64_t ,std::string> output_cache;
+        };
+
         std::list<std::unique_ptr<Generator>> blueprint;
 
         std::vector<uint64_t> line_indices = {0};
@@ -286,11 +313,42 @@ private:
             {15,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16},
             {15,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17}
         };
+    public:
+
+        void print(std::ostream& os = std::cout) {
+            os << "Expressions:\n";
+            std::unordered_set<std::string_view> buffers;
+            for (const auto& gen : blueprint) {
+                if (auto* expr = dynamic_cast<Expression*>(gen.get()))
+                    buffers.emplace(expr->buffer);
+            }
+            for (const auto& buffer : buffers)
+                os << "\t" << buffer << "\n";
+            
+
+            os << "\nLine Indices:\n";
+            uint64_t i=0;
+            for (uint64_t idx : line_indices) {
+                os << idx;
+                if ( (i++ + 1) < line_indices.size()) os << ", ";
+            }
+
+            os << "\nValues:\n";
+            for (std::string_view val : values)
+                os << "\t" << val << "\n";
+
+            os << "\nVariables:\n";
+            for (std::string_view var : variables)
+                os << "\t" << var << "\n";
+
+            os << "\nSerialization Block:\n";
+            os << serialization_block << "\n";
+        }
+
 
     };
 
     FileData file_data;
-    DataFrame dataframe;
 
 private:
 

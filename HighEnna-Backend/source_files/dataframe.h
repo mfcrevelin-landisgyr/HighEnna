@@ -568,11 +568,10 @@ public:
                 col_widths[col] = std::max(col_widths[col], (row[col]).size());
         }
 
-        auto printBorder = [&](const auto& col_order, char corner, char \\l) {
+        auto printBorder = [&](const auto& col_order, char corner, char fill) {
             os << corner;
-            for (size_t i : col_order) {
+            for (size_t i : col_order)
                 os << std::string(col_widths[cols[i]] + 2, fill) << corner;
-            }
             os << "\n";
         };
 
