@@ -1,0 +1,32 @@
+{
+  "name": "Templated Python",
+  "type": "dark",
+  "colors": {
+    "editor.background": "#1E1E1E",
+    "editor.foreground": "#D4D4D4"
+  },
+  "tokenColors": [
+    {
+      "scope": "source.templated-python",
+      "settings": {
+        "foreground": "#D4D4D4"
+      }
+    },
+    {
+      "scope": "keyword.control.templated-python",
+      "settings": {
+        "foreground": "#7474D4"
+      }
+    },
+    {
+      "scope": "keyword.template.templated-python",
+      "settings": {
+        "foreground": "#FFA447"
+      }
+    }
+  ]
+}
+
+//#46be70 green
+//#a0d0de light blue
+//#799fd0 other blue

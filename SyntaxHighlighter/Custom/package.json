@@ -1,0 +1,30 @@
+{
+  "name": "templated-python",
+  "displayName": "Templated Python",
+  "description": "Python with $$ template highlighting.",
+  "version": "0.0.1",
+  "publisher": "Mateus Felipe Crevelin ",
+  "engines": {
+    "vscode": "^1.50.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "grammars": [
+      {
+        "language": "templated-python",
+        "scopeName": "source.templated-python",
+        "path": "./syntaxes/templated-python.tmLanguage.json"
+      }
+    ],
+    "languages": [
+      {
+        "id": "templated-python",
+        "aliases": ["Templated Python", "templated-python"],
+        "extensions": [".tpl"],
+        "configuration": "./language-configuration.json"
+      }
+    ]
+  }
+}
