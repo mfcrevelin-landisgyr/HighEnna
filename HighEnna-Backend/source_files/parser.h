@@ -59,11 +59,22 @@ py::dict parse(const std::string &code) {
 
     py::dict result;
     
-    result["errors"] = py::list();
     result["tree"]   = py::list();
+    result["names"] = py::dict();
+    result["errors"] = py::list();
+
+    py::list &root = result["tree"];
+
+    py::dict &names = result["names"];
+    names["vars"] = py::set();
+    names["vals"] = py::set();
+    py::set &vars = names["vars"];
+    py::set &vals = names["vals"];
+
+    py::list &errors = result["errors"];
 
     std::vector<py::list> tree_stack;
-    tree_stack.push_back(result["tree"].cast<py::list>());
+    tree_stack.push_back(root);
 
     // ---------- Other  Variables ----------
 
@@ -72,6 +83,8 @@ py::dict parse(const std::string &code) {
     uint64_t plain_text_start=0, plain_text_end=0;
     uint64_t expression_start=0, expression_end=0;
     uint64_t directive_start=0, directive_end=0;
+    uint64_t name_start=0, name_end=0;
+    uint64_t line_content_start=0;
 
     enum class Directive : uint8_t {
         FOR,IF,ELSE,END
@@ -99,12 +112,16 @@ py::dict parse(const std::string &code) {
                 } break;
             case 0x12:
                 {
-                    if (pstate!=0x12);
+                    // if (pstate!=0x12);
                     // Log de erro expressão não fechada por quebra de linha
                 } break;
             case 0x22:
                 {
                     expression_end = ptr;
+                } break;
+            case 0x23:
+                {
+                    directive_end = ptr;
                 } break;
             case 0x02:
             case 0x27:
@@ -116,7 +133,7 @@ py::dict parse(const std::string &code) {
                 {
                     py::dict node;
                     node["type"] = "plain_text";
-                    node["text"] = py::str(reinterpret_cast<const char*>(code_buffer + plain_text_start), plain_text_end - plain_text_start);
+                    node["range"] = py::make_tuple(plain_text_start, plain_text_end);
                     tree_stack.back().append(node);
                 } break;
             case 0x1D:
@@ -127,6 +144,22 @@ py::dict parse(const std::string &code) {
                 {
                     v_type = vType::VAL;
                 } break;
+            case 0x04:
+                {
+                    directive = Directive::FOR;
+                } break;
+            case 0x07:
+                {
+                    directive = Directive::IF;
+                } break;
+            case 0x0A:
+                {
+                    directive = Directive::ELSE;
+                } break;
+            case 0x28:
+                {
+                    directive = Directive::END;
+                } break;
         }
 
         switch (transition) {
@@ -134,8 +167,12 @@ py::dict parse(const std::string &code) {
                 {
                     py::dict node;
                     node["type"] = "expression";
-                    node["text"] = py::str(reinterpret_cast<const char*>(code_buffer + expression_start), expression_end - expression_start);
-                    tree_stack.back().append(node);
+                    node["range"] = py::make_tuple(expression_start, expression_end);
+                } break;
+            case 0x0026:
+            case 0x0027:
+                {
+                    line_content_start = ptr;
                 } break;
             case 0x0311:
             case 0x0321:
@@ -150,6 +187,144 @@ py::dict parse(const std::string &code) {
             case 0x2B1B:
                 {
                     expression_start = ptr;
+                } break;
+            case 0x0D24:
+            case 0x0D0F:
+            case 0x0D13:
+            case 0x0E13:
+                {
+                    directive_start = ptr;
+                } break;
+            case 0x0C25:
+            case 0x2925:
+                {
+                    directive_end = ptr;
+                    py::dict node;
+                    switch(directive){
+                        case Directive::FOR:
+                            {
+                                node["type"] = "FOR";
+                                node["range"] = py::make_tuple(directive_start, directive_end);
+                    
+                                py::list subtree;
+                                node["subtree"] = subtree;
+                                
+                                tree_stack.back().append(node);
+                                tree_stack.push_back(subtree);
+                            } break;
+                        case Directive::IF:
+                            {
+                                node["type"] = "IF";
+                                node["pos_range"] = py::make_tuple(directive_start, directive_end);
+                    
+                                py::list pos_subtree;
+                                node["pos_subtree"] = pos_subtree;
+                                
+                                tree_stack.back().append(node);
+                                tree_stack.push_back(pos_subtree);
+                            } break;
+                        case Directive::ELSE:
+                            {
+                                if (tree_stack.size() < 2) {
+                                    py::dict err;
+                                    err["message"] = py::str("ELSE outside of IF.");
+                                    err["range"] = py::make_tuple(line_start_indexes.size(),line_content_start, ptr);
+                                    errors.append(err);
+                                    break;
+                                }
+
+                                py::list &parent_subtree = tree_stack[tree_stack.size() - 2];
+                                py::dict &parent_node = parent_subtree[parent_subtree.size() - 1].cast<py::dict>();
+                                py::str &parent_node_type = parent_node["type"];
+
+                                if (parent_node_type != "IF") {
+                                    py::dict err;
+                                    err["message"] = py::str("ELSE outside of IF.");
+                                    err["range"] = py::make_tuple(line_start_indexes.size(),line_content_start, ptr);
+                                    errors.append(err);
+                                    break;
+                                }
+
+                                py::list neg_subtree;
+                                parent_node["neg_subtree"] = neg_subtree;
+
+                                tree_stack.pop_back();
+                                tree_stack.push_back(neg_subtree);
+                            } break;
+                        case Directive::ELIF:
+                            {
+                                if (tree_stack.size() < 2) {
+                                    py::dict err;
+                                    err["message"] = py::str("ELIF outside of IF.");
+                                    err["range"] = py::make_tuple(line_start_indexes.size(),line_content_start, ptr);
+                                    errors.append(err);
+                                    state = 0x1A;
+                                    break;
+                                }
+
+                                py::list &parent_subtree = tree_stack[tree_stack.size() - 2];
+                                py::dict &parent_node = parent_subtree[parent_subtree.size() - 1].cast<py::dict>();
+                                py::str &parent_node_type = parent_node["type"];
+
+                                if (parent_node_type != "IF") {
+                                    py::dict err;
+                                    err["message"] = py::str("ELIF outside of IF.");
+                                    err["range"] = py::make_tuple(line_start_indexes.size(),line_content_start, ptr);
+                                    errors.append(err);
+                                    state = 0x1A;
+                                    break;
+                                }
+
+                                py::list neg_subtree;
+                                parent_node["neg_subtree"] = neg_subtree;
+
+                                tree_stack.pop_back();
+                                tree_stack.push_back(neg_subtree);
+
+                                node["type"] = "ELIF";
+                                node["pos_range"] = py::make_tuple(directive_start, directive_end);
+                    
+                                py::list pos_subtree;
+                                node["pos_subtree"] = pos_subtree;
+                                
+                                tree_stack.back().append(node);
+                                tree_stack.push_back(pos_subtree);
+                            } break;
+                        case Directive::END:
+                            {
+                                if (tree_stack.size() > 1)
+                                    tree_stack.pop_back();
+                                else {
+                                    // closing root: error
+                                    py::dict err;
+                                    err["message"] = py::str("Attempted to close root block.");
+                                    err["range"] = py::make_tuple(line_start_indexes.size(),line_content_start, ptr);
+                                    errors.append(err);
+                                }
+                            } break;
+                    }
+                } break;
+            case 0x1719:
+            case 0x1F20:
+                {
+                    name_start = ptr;
+                } break;
+            case 0x2011:
+            case 0x190F:
+            case 0x1923:
+                {
+                    name_end = ptr;
+                    py::str name = py::str(reinterpret_cast<const char*>(code_buffer + name_start), name_end - name_start);
+                    switch(v_type){
+                        case vType::VAL:
+                            {
+                                vals.add(name);
+                            } break;
+                        case vType::VAR:
+                            {
+                                vars.add(name);
+                            } break;
+                    }
                 } break;
         }
 
