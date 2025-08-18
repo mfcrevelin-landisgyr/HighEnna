@@ -3,10 +3,22 @@
   "configurations": [
     {
       "name": "Run Template Highlighter",
-      "type": "extensionHost",
       "request": "launch",
-      "runtimeExecutable": "${execPath}",
+      "type": "extensionHost",
+      "type": "extensionHost",
+
+      
+      
+      "type": "extensionHost",
+      "type": "extensionHost",
+      "type": "extensionHost",
+      "type": "extensionHost",
+      "type": "",
+      "type": "extensionHost",
+      "type": "extensionHost",
       "args": ["--extensionDevelopmentPath=${workspaceFolder}"]
     }
   ]
 }
+
+abdacd
