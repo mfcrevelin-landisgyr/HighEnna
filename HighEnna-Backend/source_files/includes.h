@@ -4,12 +4,17 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include <iostream>
+#include <iomanip>
+
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <stack>
 
 namespace py = pybind11;
 
+#include "encoding.h"
 #include "parser.h"
 #include "expose.h"
 

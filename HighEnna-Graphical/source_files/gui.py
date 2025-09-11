@@ -2,8 +2,11 @@ from PyQt6.QtWidgets import *
 from PyQt6.QtCore import *
 from PyQt6.QtGui import *
 
+from project import *
 from custom_qt import *
-from custom_classes import *
+
+from cacher import Cacher
+from tpy_view import TpyView
 
 from appdirs import user_cache_dir
 import sys
@@ -24,21 +27,35 @@ APPLICATION_NAME = "High Enna"
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+
+        self.dictionary = {"main_window":self}
+        self.__dict__.update(self.dictionary)
+        
         self.setWindowTitle(APPLICATION_NAME)
         self.setWindowIcon(QIcon(resource_path("assets\\icons\\icon.png")))
-        self.adjust_size()
         self.init_ui()
 
-        self.project = Project(self)
+        self.project = Project()
+        self.entries = []
+        self.open_entries = []
 
         self.application_cache = Cacher(os.path.join(user_cache_dir(APPLICATION_NAME),"application_cache.json"))
+        
+        self.watcher = QFileSystemWatcher()
+        self.watcher.directoryChanged.connect(self.on_watcher_directory_changed)
+        self.watch_debouncer = QTimer()
+        self.watch_debouncer.setSingleShot(True)
+        self.watch_debouncer.timeout.connect(self.on_watch_debouncer_timeout)
 
         current_project_path = self.application_cache['main_window:current_project_path']
-        # print(current_project_path)
         if current_project_path and os.path.isdir(current_project_path):
-            self.project.open(current_project_path)
+            self.open_project(current_project_path)
 
         self.adjust_size()
+
+        global desktop_path
+        desktop_path = os.path.join(os.environ["USERPROFILE"], "Desktop")
+
 
     def init_ui(self):
         self.init_menubar()
@@ -46,18 +63,18 @@ class MainWindow(QMainWindow):
         self.main_widget = QWidget()
         self.setCentralWidget(self.main_widget)
 
-        self.main_layout = QHBoxLayout(self.main_widget)
+        self.main_layout = QVBoxLayout(self.main_widget)
 
-        self.tab_widget = CustomTabWidget()
-        self.main_layout.addWidget(self.tab_widget, 1)
+        self.scroll_area = CScrollArea()
+        self.scroll_area.setWidgetResizable(True)
 
-        # side_panel = QVBoxLayout()
-        # main_layout.addLayout(side_panel)
+        self.scroll_area_widget = QWidget()
+        self.scroll_area_layout = QVBoxLayout(self.scroll_area_widget)
+        self.scroll_area_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.scroll_area.setWidget(self.scroll_area_widget)
 
-        # self.new_tab_btn = QPushButton("New Tab")
-        # self.new_tab_btn.clicked.connect(self.add_dummy_tab)
-        # side_panel.addWidget(self.new_tab_btn)
-        # side_panel.addStretch()
+        self.main_layout.addWidget(self.scroll_area)
+        
 
     def init_menubar(self):
 
@@ -75,7 +92,8 @@ class MainWindow(QMainWindow):
                 {"option": "Render All", "keybinding": "Ctrl+Shift+R", "slot": self.render_all_slot},
                 {"option": "Render", "keybinding": "Ctrl+R", "slot": self.render_slot},
                 None,
-                {"option": "Exit", "keybinding": "Ctrl+Q", "slot": self.exit_slot}
+                {"option": "Open Containing Folder   ", "keybinding": "", "slot": self.open_containing_folder_slot},
+                {"option": "Exit", "keybinding": "Ctrl+W", "slot": self.exit_slot}
             ],
             "Edit": [
                 None,
@@ -109,12 +127,23 @@ class MainWindow(QMainWindow):
                 menu.addAction(action)
             menu_bar.addMenu(menu)
 
+#--- Slots --- #
+    
+    def on_watcher_directory_changed(self):
+        self.watch_debouncer.start(50)
+    
+    def on_watch_debouncer_timeout(self):
+        self.project.update()
+        self.populate()
+
 #--- Menu Bar Slots --- #
+
+    def open_containing_folder_slot(self):
+        os.system(f'explorer "{self.application_cache["main_window:current_project_path"]}"')
 
     def open_project_slot(self):
         current_project_path = self.application_cache['main_window:current_project_path']
         last_project_paths = self.application_cache['main_window:last_project_paths']
-        desktop_path = os.path.join(os.environ["USERPROFILE"], "Desktop")
 
         if last_project_paths is None:
             last_project_paths = self.application_cache['main_window:last_project_paths'] = []
@@ -131,10 +160,40 @@ class MainWindow(QMainWindow):
         if new_path and os.path.isdir(new_path) and not os.path.abspath(new_path) == current_project_path:
             self.application_cache['main_window:current_project_path'] = os.path.abspath(new_path)
             self.application_cache['main_window:last_project_paths'].insert(0, os.path.abspath(new_path))
-            self.project.open(new_path)
+            self.open_project(new_path)
 
     def new_file_slot(self):
-        QMessageBox.information(self, "new_file_slot", "new_file_slot")
+        current_project_path = self.application_cache['main_window:current_project_path']
+        if not current_project_path:
+            QMessageBox.warning(self, "No Project Open", "There is no project open.")
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Create New File",
+                current_project_path,
+                "TPY Files (*.tpy)",
+                options=QFileDialog.Option.DontConfirmOverwrite
+            )
+
+        if not file_path:
+            return
+
+        if not file_path.endswith(".tpy"):
+            file_path += ".tpy"
+
+        if os.path.exists(file_path):
+            QMessageBox.warning(self, "File Exists", f"The file '{os.path.basename(file_path)}' already exists.")
+            return
+
+        try:
+            with open(file_path, 'w', encoding='utf-8') as f:
+                pass
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to create file:\n{e}")
+            return
+
+
 
     def save_all_slot(self):
         QMessageBox.information(self, "save_all_slot", "save_all_slot")
@@ -143,19 +202,15 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "save_slot", "save_slot")
 
     def render_all_slot(self):
-        current_index = self.tab_widget.currentIndex()
-        full_title = self.tab_widget.full_titles[current_index]
-        QMessageBox.information(self, "render_all_slot", full_title)
+        QMessageBox.information(self, "render_all_slot", "render_all_slot")
 
     def render_slot(self):
-        current_index = self.tab_widget.currentIndex()
-        full_title = self.tab_widget.full_titles[current_index]
-        QMessageBox.information(self, "render_slot", full_title)
+        QMessageBox.information(self, "render_slot", "render_slot")
 
     def exit_slot(self):
         if self.application_cache['main_window:current_project_path']:
             self.application_cache['main_window:current_project_path'] = ''
-            self.project.close()
+            self.close_project()
         else:
             self.close()
 
@@ -180,6 +235,22 @@ class MainWindow(QMainWindow):
 
 #--- Main Window Utils --- #
 
+    def populate(self):
+        self.clear()
+        for idx,tpy_file_key in enumerate(sorted(self.project.tpy_files)):
+            self.entries.append(TpyView(idx,self.project.tpy_files[tpy_file_key],self.dictionary))
+
+    def clear(self):
+        def _clear_layout(layout):
+            while layout.count():
+                item = layout.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+                elif item.layout():
+                    _clear_layout(item.layout())
+        _clear_layout(self.scroll_area_layout)
+        self.entries.clear()
+
     def parse_keybinding(keybinding):
         parts = keybinding.split("+")
         mods = Qt.KeyboardModifier(0)
@@ -201,10 +272,11 @@ class MainWindow(QMainWindow):
                     raise ValueError(f"Unknown key: {part}")
         return mods, key
 
-    def adjust_size(self, ratio=(3, 5)):
+    def adjust_size(self):
         numer, denom = 5,7
 
-        screen = QApplication.screenAt(self.geometry().center())
+        cursor_pos = QCursor.pos()
+        screen = QApplication.screenAt(cursor_pos)
         if not screen:
             screen = QApplication.primaryScreen()
 
@@ -223,6 +295,20 @@ class MainWindow(QMainWindow):
 
 
 #--- Main Window Methods --- #
+
+    def open_project(self,new_path):
+        self.project.open(new_path)
+        self.setWindowTitle(APPLICATION_NAME + ' - ' + self.project.project_name)
+        self.populate()
+        self.watcher.addPath(new_path)
+
+    def close_project(self):
+        self.watcher.removePaths(self.watcher.files())
+        self.watcher.removePaths(self.watcher.directories())
+        self.project.close()
+        self.setWindowTitle(APPLICATION_NAME)
+        self.clear()
+        self.open_entries.clear()
 
     def keyPressEvent(self, event: QKeyEvent):
         pressed_mods = event.modifiers()

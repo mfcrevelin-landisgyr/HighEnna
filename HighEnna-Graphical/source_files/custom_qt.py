@@ -2,272 +2,404 @@ from PyQt6.QtWidgets import *
 from PyQt6.QtCore import *
 from PyQt6.QtGui import *
 
-import re
-
-class TabSearchDialog(QDialog):
-    def __init__(self, parent: 'CustomTabWidget'):
-        super().__init__(parent)
-        self.setWindowTitle("Search Tabs")
-        self.setMinimumSize(300, 400)
-        self.tab_widget = parent
-
-        self.search_bar = QLineEdit(self)
-        self.search_bar.setPlaceholderText("Enter regex to search tabs...")
-        self.search_bar.textChanged.connect(self.update_list)
-
-        self.result_list = QListWidget(self)
-        self.result_list.itemActivated.connect(self.select_tab)
-
-        layout = QVBoxLayout(self)
-        layout.addWidget(self.search_bar)
-        layout.addWidget(self.result_list)
-
-        self.update_list()
-        self.adjust_size()
-
-    def update_list(self):
-        pattern = self.search_bar.text()
-        self.result_list.clear()
-
-        try:
-            regex = re.compile(pattern, re.IGNORECASE)
-        except re.error:
-            return  # Ignore invalid regex
-
-        for index, full_title in enumerate(self.tab_widget.full_titles):
-            if regex.search(full_title):
-                item = QListWidgetItem(full_title)
-                item.setData(Qt.ItemDataRole.UserRole, index)
-                self.result_list.addItem(item)
-
-    def select_tab(self, item: QListWidgetItem):
-        index = item.data(Qt.ItemDataRole.UserRole)
-        self.tab_widget.setCurrentIndex(index)
-        self.accept()
-
-    def adjust_size(self):
-        if self.isMaximized():
-            return
-
-        item_count = self.result_list.count()
-
-        if item_count == 0:
-            return
-
-        # Measure the widest list item
-        max_label_width = 0
-        for i in range(item_count):
-            item = self.result_list.item(i)
-            max_label_width = max(max_label_width, self.result_list.fontMetrics().boundingRect(item.text()).width())
-
-        # Add room for scrollbar and margins
-        total_width = max_label_width + 60
-
-        # Assume approx 30px per item, up to 10 items visible
-        visible_items = min(item_count, 10)
-        total_height = 50 + 30 * visible_items + self.search_bar.sizeHint().height()
-
-        # Ensure not smaller than current size (avoid shrinking)
-        total_width = max(total_width, self.width())
-        total_height = max(total_height, self.height())
-
-        # Constrain to screen
-        current_screen = QApplication.screenAt(self.geometry().center())
-        if current_screen:
-            available_geometry = current_screen.availableGeometry()
+class CScrollArea(QScrollArea):
+    def wheelEvent(self, event: QWheelEvent):
+        if event.modifiers() == Qt.KeyboardModifier.ShiftModifier:
+            delta = event.angleDelta().y()
+            scroll_step = 10
+            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta / scroll_step)
+            event.accept()
         else:
-            available_geometry = QApplication.primaryScreen().availableGeometry()
+            delta = event.angleDelta().y()
+            scroll_step = 10
+            new_value = self.verticalScrollBar().value() - delta / scroll_step
+            self.verticalScrollBar().setValue(int(new_value))
+            event.accept()
+            super().wheelEvent(event)
 
-        total_width = min(total_width, available_geometry.width() - 75)
-        total_height = min(total_height, available_geometry.height() - 100)
+class CLabel(QLabel):
+    left_clicked = pyqtSignal()
+    right_clicked = pyqtSignal()
+    clicked = pyqtSignal()
 
-        self.resize(total_width, total_height)
-
-
-class CustomTabWidget(QTabWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        self.full_titles: list[str] = []
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.left_clicked.emit()
+            self.clicked.emit()
+        elif event.button() == Qt.MouseButton.RightButton:
+            self.right_clicked.emit()
+            self.clicked.emit()
+        else:
+            super().mousePressEvent(event)
 
-        self.tabBar().setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.tabBar().customContextMenuRequested.connect(self.on_tabbar_context_menu)
+class CTableModel(QAbstractTableModel):
+    def __init__(self, dictionary,data_table):
+        super().__init__()
+        self.dictionary = {'table_model':self}
+        self.dictionary.update(dictionary)
+        self.__dict__.update(self.dictionary)
 
-    def addTab(self, widget: QWidget, full_title: str):
-        tab_title = full_title[:20] + "..." if len(full_title) > 20 else full_title
-        index = super().addTab(widget, tab_title)
-        self.full_titles.insert(index, full_title)
-        return index
+        self.table = data_table
 
-    def insertTab(self, index: int, widget: QWidget, full_title: str):
-        tab_title = full_title[:20] + "..." if len(full_title) > 20 else full_title
-        index = super().insertTab(index, widget, tab_title)
-        self.full_titles.insert(index, full_title)
-        return index
+    def rowCount(self, parent=QModelIndex()):
+        return len(self.table.data)
 
-    def removeTab(self, index: int):
-        super().removeTab(index)
-        del self.full_titles[index]
+    def colCount(self, parent=QModelIndex()):
+        return len(self.table.column_names)
 
-    def on_tabbar_context_menu(self, pos: QPoint):
-        tabbar = self.tabBar()
-        menu = QMenu(tabbar)
-
-        # Add search action
-        search_action = menu.addAction("🔍 Search Tabs...")
-        search_action.triggered.connect(self.open_search_dialog)
-        menu.addSeparator()
-
-        # Add tab titles (full titles)
-        for i, full_title in enumerate(self.full_titles):
-            action = menu.addAction(full_title)
-            action.triggered.connect(lambda checked=False, index=i: self.setCurrentIndex(index))
-
-        global_pos = tabbar.mapToGlobal(pos)
-        menu.exec(global_pos)
-
-    def open_search_dialog(self):
-        dialog = TabSearchDialog(self)
-        dialog.exec()
-
-class CustomModel(QAbstractTableModel):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.table = Table()
-
-    def rowCount(self, parent=QModelIndex()) -> int:
-        return len(self.table.data) if hasattr(self.table, 'data') else 0
-
-    def columnCount(self, parent=QModelIndex()) -> int:
-        return len(self.table.column_names) if hasattr(self.table, 'column_names') else 0
+    def columnCount(self, parent=QModelIndex()):
+        return self.colCount(parent)
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
-        if not index.isValid() or role not in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
-            return None
-        return self.table.get_cell(index.row(), index.column())
+        if not index.isValid():
+            return QVariant()
+        if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
+            row = index.row()
+            col = index.column()
+            return self.table.get_cell(row, col)
+        return QVariant()
 
     def setData(self, index, value, role=Qt.ItemDataRole.EditRole):
-        if index.isValid() and role == Qt.ItemDataRole.EditRole:
-            self.table.set_cell([(index.row(), index.column(), value)])
-            self.dataChanged.emit(index, index, [role])
-            return True
-        return False
-
-    def flags(self, index):
-        return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEditable
-
-    def supportedDropActions(self):
-        return Qt.DropAction.MoveAction
-
-    def moveRows(self, sourceParent, sourceRow, count, destinationParent, destinationChild):
-        if sourceRow == destinationChild or count != 1:
+        if not index.isValid() or role != Qt.ItemDataRole.EditRole:
             return False
-
-        self.beginMoveRows(sourceParent, sourceRow, sourceRow, destinationParent, destinationChild)
-        self.table.swap_rows([(sourceRow, destinationChild)])
-        self.endMoveRows()
+        row = index.row()
+        col = index.column()
+        self.table.set_cell([(row, col, str(value))])
+        self.dataChanged.emit(index, index, [role])
+        # self.table.print()
         return True
 
+    def flags(self, index):
+        return (
+            Qt.ItemFlag.ItemIsSelectable |
+            Qt.ItemFlag.ItemIsEnabled |
+            Qt.ItemFlag.ItemIsEditable |
+            Qt.ItemFlag.ItemIsDragEnabled |
+            Qt.ItemFlag.ItemIsDropEnabled
+        )
 
-    # Forwarding methods
-    def undo(self):
-        self.table.undo()
-        self.modelReset.emit()
+    def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
+        if role != Qt.ItemDataRole.DisplayRole:
+            return QVariant()
+        if orientation != Qt.Orientation.Horizontal:
+            return str(section+1)
+        if 0 <= section < len(self.table.column_names):
+            return self.table.column_names[section]
+        return QVariant()
 
-    def redo(self):
-        self.table.redo()
-        self.modelReset.emit()
+    def supportedDragActions(self):
+        return Qt.DropAction.MoveAction
 
-    def insert_column(self, items):
-        self.table.insert_column(items)
-        self.modelReset.emit()
+    def handle_column_move(self, from_index, to_index):
+        if from_index == to_index:
+            return
+        self.beginResetModel()
+        self.table.move_column([(from_index, to_index)])
+        self.endResetModel()
 
-    def remove_column(self, items):
-        self.table.remove_column(items)
-        self.modelReset.emit()
+    def handle_row_move(self, from_index, to_index):
+        if from_index == to_index:
+            return
+        self.beginResetModel()
+        self.table.move_row([(from_index, to_index)])
+        self.endResetModel()
 
-    def insert_row(self, items):
-        self.table.insert_row(items)
-        self.modelReset.emit()
+class CTableView(QTableView):
+    def __init__(self, dictionary, data_table):
+        super().__init__()
 
-    def duplicate_row(self, items):
-        self.table.duplicate_row(items)
-        self.modelReset.emit()
+        self.dictionary = {'table_view':self}
+        self.dictionary.update(dictionary)
+        self.__dict__.update(self.dictionary)
 
-    def remove_row(self, items):
-        self.table.remove_row(items)
-        self.modelReset.emit()
+        self.setMouseTracking(True)
+        
+        self.horizontalHeader().setSectionsMovable(True)
+        self.verticalHeader().setSectionsMovable(True)
 
-    def set_cell(self, items):
-        self.table.set_cell(items)
-        self.modelReset.emit()
+        self.table_model = CTableModel(self.dictionary, data_table)
+        self.setModel(self.table_model)
 
-    def swap_columns(self, items):
-        self.table.swap_columns(items)
-        self.modelReset.emit()
+        self.horizontalHeader().sectionMoved.connect(self.on_column_moved)
+        self.verticalHeader().sectionMoved.connect(self.on_row_moved)
+        
+        self.resizeColumnsToContents()
+        self.resizeRowsToContents()
 
-    def swap_rows(self, items):
-        self.table.swap_rows(items)
-        self.modelReset.emit()
+    def wheelEvent(self, event: QWheelEvent):
+        if event.modifiers() == Qt.KeyboardModifier.ShiftModifier:
+            scrollbar = self.horizontalScrollBar()
+        else:
+            scrollbar = self.verticalScrollBar()
 
-class ReorderableHeaderView(QHeaderView):
-    def __init__(self, orientation, parent=None):
-        super().__init__(orientation, parent)
-        self.setSectionsMovable(True)
-        self.setDragEnabled(True)
-        self.setDragDropMode(QAbstractItemView.InternalMove)
-        self.setDefaultDropAction(Qt.MoveAction)
+        steps = event.angleDelta().y() // 120
+        delta = -steps * scrollbar.singleStep()
+        new_value = scrollbar.value() + delta
 
-    def dropEvent(self, event):
-        old = self.logicalIndex(self.draggedSection())
-        new = self.logicalIndexAt(event.position().toPoint())
+        # If scrollbar can still move, handle normally
+        if scrollbar.minimum() <= new_value <= scrollbar.maximum():
+            scrollbar.setValue(new_value)
+        else:
+            if event.modifiers() == Qt.KeyboardModifier.ShiftModifier:
+                scrollbar = self.main_window.scroll_area.horizontalScrollBar()
+            else:
+                scrollbar = self.main_window.scroll_area.verticalScrollBar()
+            
+            delta = -steps * scrollbar.singleStep()
+            new_value = scrollbar.value() + delta*3
+            scrollbar.setValue(max(scrollbar.minimum(), min(new_value, scrollbar.maximum())))
 
-        if old != new and old != -1 and new != -1:
-            self.parent().swap_columns((old, new))
-            event.accept()
+    def on_column_moved(self, logicalIndex, oldVisualIndex, newVisualIndex):
+        if self.model():
+            self.model().handle_column_move(oldVisualIndex, newVisualIndex)
 
-class CustomTableView(QTableView):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.model_ = CustomModel(self)
-        self.setModel(self.model_)
+            header = self.horizontalHeader()
+            header.blockSignals(True)
+            for logical_index in range(header.count()):
+                visual_index = header.visualIndex(logical_index)
+                if visual_index != logical_index:
+                    header.moveSection(visual_index, logical_index)
+            header.blockSignals(False)
 
-        self.setDragDropMode(QAbstractItemView.InternalMove)
-        self.setDragEnabled(True)
-        self.setAcceptDrops(True)
-        self.setDropIndicatorShown(True)
-        self.setDefaultDropAction(Qt.MoveAction)
+            # self.table_model.table.print()
 
-        self.setHorizontalHeader(ReorderableHeaderView(Qt.Orientation.Horizontal, self))
+    def on_row_moved(self, logicalIndex, oldVisualIndex, newVisualIndex):
+        if self.model():
+            self.model().handle_row_move(oldVisualIndex, newVisualIndex)
 
+            header = self.verticalHeader()
+            header.blockSignals(True)
+            for logical_index in range(header.count()):
+                visual_index = header.visualIndex(logical_index)
+                if visual_index != logical_index:
+                    header.moveSection(visual_index, logical_index)
+            header.blockSignals(False)
 
-    # Forwarding to the model
-    def undo(self):
-        self.model_.undo()
+            # self.table_model.table.print()
+    
+    def sizeHint(self):
+        rows = self.table_model.rowCount()
+        total_row_height = sum(self.verticalHeader().sectionSize(row) for row in range(rows+1))
+        header_height = self.horizontalHeader().height()
+        padding = 15
+        total_height = total_row_height + header_height + padding
+        self.setMinimumHeight(total_height)
+        return QSize(0, total_height)
 
-    def redo(self):
-        self.model_.redo()
+class CErrorTableModel(QAbstractTableModel):
+    def __init__(self, dictionary, data_table):
+        super().__init__()
+        self.dictionary = {'table_model': self}
+        self.dictionary.update(dictionary)
+        self.__dict__.update(self.dictionary)
 
-    def insert_column(self, items):
-        self.model_.insert_column(items)
+        self.table = data_table
+        self.fixed_font = QFont("Courier New")
 
-    def remove_column(self, items):
-        self.model_.remove_column(items)
+    def rowCount(self, parent=QModelIndex()):
+        return len(self.table.data)
 
-    def insert_row(self, items):
-        self.model_.insert_row(items)
+    def colCount(self, parent=QModelIndex()):
+        return len(self.table.column_names)
 
-    def duplicate_row(self, items):
-        self.model_.duplicate_row(items)
+    def columnCount(self, parent=QModelIndex()):
+        return self.colCount(parent)
 
-    def remove_row(self, items):
-        self.model_.remove_row(items)
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        if not index.isValid():
+            return QVariant()
+        if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
+            row = index.row()
+            col = index.column()
+            return self.table.get_cell(row, col)
+        if role == Qt.ItemDataRole.FontRole:
+            return self.fixed_font
+        if role == Qt.ItemDataRole.TextAlignmentRole:
+            col_name = self.table.column_names[index.column()]
 
-    def set_cell(self, items):
-        self.model_.set_cell(items)
+            left_cols = {"What","Line"}
 
-    def swap_columns(self, items):
-        self.model_.swap_columns(items)
+            if col_name in left_cols:
+                return Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+            else:
+                return Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter
+        return QVariant()
 
-    def swap_rows(self, items):
-        self.model_.swap_rows(items)
+    def flags(self, index):
+        return (
+            Qt.ItemFlag.ItemIsSelectable |
+            Qt.ItemFlag.ItemIsEnabled
+        )
+
+    def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
+        if role != Qt.ItemDataRole.DisplayRole:
+            return QVariant()
+        if orientation != Qt.Orientation.Horizontal:
+            return str(section + 1)
+        if 0 <= section < len(self.table.column_names):
+            return self.table.column_names[section]
+        return QVariant()
+
+class DetailErrorWindow(QWidget):
+    def __init__(self, parent, data):
+        super().__init__(parent, flags=Qt.WindowType.Window)
+        self.setWindowTitle(f"Error Details")
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+
+        # Build the content widget
+        content = QWidget()
+        layout = QVBoxLayout(content)
+
+        mono_font = QFont("Courier New")
+        bold_font = QFont()
+        bold_font.setBold(True)
+
+        for key, value in data.items():
+            frame = QFrame()
+            frame.setFrameShape(QFrame.Shape.StyledPanel)
+            frame.setLineWidth(2)
+
+            inner_layout = QVBoxLayout(frame)
+
+            # key label
+            label_key = QLabel(f"{key}:")
+            label_key.setFont(bold_font)
+
+            # value label
+            label_value = QLabel(str(value))
+            label_value.setFont(mono_font)
+            label_value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+
+            if key in {"code", "row", "col"}:
+                # place key and value side by side
+                hlayout = QHBoxLayout()
+                hlayout.addWidget(label_key)
+                hlayout.addWidget(label_value)
+                hlayout.addStretch()
+                inner_layout.addLayout(hlayout)
+            else:
+                # stack key and value vertically
+                inner_layout.addWidget(label_key)
+                inner_layout.addWidget(label_value)
+
+            layout.addWidget(frame)
+
+        # Add spacing/stretch so it looks clean
+        layout.addStretch(1)
+
+        # ---- Size management ----
+        screen_geo = QGuiApplication.primaryScreen().availableGeometry()
+        max_w = int(screen_geo.width() * 0.8)
+        max_h = int(screen_geo.height() * 0.8)
+
+        content.adjustSize()
+        needed_size = content.sizeHint()
+
+        if needed_size.width() > max_w or needed_size.height() > max_h:
+            # Wrap content in scroll area
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setWidget(content)
+
+            main_layout = QVBoxLayout(self)
+            main_layout.addWidget(scroll)
+            self.resize(min(needed_size.width(), max_w),
+                        min(needed_size.height(), max_h))
+        else:
+            # No scroll needed
+            main_layout = QVBoxLayout(self)
+            main_layout.addWidget(content)
+            self.adjustSize()
+
+        # Disable resizing
+        self.setFixedSize(self.size())
+
+class CErrorTableView(QTableView):
+    def __init__(self, dictionary, data_table):
+        super().__init__()
+
+        self.dictionary = {'table_view':self}
+        self.dictionary.update(dictionary)
+        self.__dict__.update(self.dictionary)
+
+        self.data_table = data_table
+        self.setMouseTracking(True)
+        
+        self.horizontalHeader().setSectionsMovable(False)
+        self.verticalHeader().setSectionsMovable(False)
+
+        self.table_model = CErrorTableModel(self.dictionary,data_table)
+        self.setModel(self.table_model)
+
+        self.doubleClicked.connect(self.on_double_click)
+        
+        self.resizeColumnsToContents()
+        self.resizeRowsToContents()
+
+    def wheelEvent(self, event: QWheelEvent):
+        if event.modifiers() == Qt.KeyboardModifier.ShiftModifier:
+            scrollbar = self.horizontalScrollBar()
+        else:
+            scrollbar = self.verticalScrollBar()
+
+        steps = event.angleDelta().y() // 120
+        delta = -steps * scrollbar.singleStep()
+        new_value = scrollbar.value() + delta
+
+        # If scrollbar can still move, handle normally
+        if scrollbar.minimum() <= new_value <= scrollbar.maximum():
+            scrollbar.setValue(new_value)
+        else:
+            if event.modifiers() == Qt.KeyboardModifier.ShiftModifier:
+                scrollbar = self.main_window.scroll_area.horizontalScrollBar()
+            else:
+                scrollbar = self.main_window.scroll_area.verticalScrollBar()
+            
+            delta = -steps * scrollbar.singleStep()
+            new_value = scrollbar.value() + delta*3
+            scrollbar.setValue(max(scrollbar.minimum(), min(new_value, scrollbar.maximum())))
+
+    # def on_double_click(self, index):
+    #     if not index.isValid(): return
+    #     row = index.row()
+    #     if row >= len(self.data_table): return
+    #     code = self.data_table.get_cell(row,0)
+    #     message = get_error_message(code)
+    #     msg_box = QMessageBox(self)
+    #     msg_box.setIcon(QMessageBox.Icon.NoIcon)
+    #     msg_box.setWindowTitle(f"Error {code}")
+    #     msg_box.setText(message)
+    #     msg_box.show()
+
+    def on_double_click(self, index):
+        if not index.isValid():
+            return
+
+        row = index.row()
+        if row >= len(self.data_table):
+            return
+
+        # Gather data into dict
+        data = {
+            "code": self.data_table.get_cell(row, 0),
+            "row": self.data_table.get_cell(row, 1),
+            "col": self.data_table.get_cell(row, 2),
+            "line": self.data_table.get_cell(row, 3),
+            "what": self.data_table.get_cell(row, 4),
+        }
+
+        # Create child window (owned by self)
+        self.detail_window = DetailErrorWindow(self, data)
+        self.detail_window.show()
+
+    def sizeHint(self):
+        rows = self.table_model.rowCount()
+        total_row_height = sum(self.verticalHeader().sectionSize(row) for row in range(rows+1))
+        header_height = self.horizontalHeader().height()
+        padding = 15
+        total_height = total_row_height + header_height + padding
+        self.setMinimumHeight(total_height)
+        return QSize(0, total_height)
