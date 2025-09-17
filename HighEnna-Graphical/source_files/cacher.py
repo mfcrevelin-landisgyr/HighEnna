@@ -2,75 +2,137 @@ from collections import deque
 import json
 import os
 
-class Cacher:
-    def __init__(self, file_path):
+class Cacher(dict):
+    def __init__(self,file_path, *, reader=None, writer=None, attributes={}):
         self.file_path = os.path.abspath(file_path)
-        self.data = {}
+        self.__dict__.update(attributes)
+
+        if reader:
+            self.read = reader
+        else:
+            def defaultReader(cacher):
+                with open(cacher.file_path, 'r') as f:
+                    data = json.load(f)
+                return data
+            self.read = defaultReader
+
+
+        if writer:
+            self.write = writer
+        else:
+            def defaultWriter(cacher):
+                os.makedirs(os.path.dirname(cacher.file_path), exist_ok=True)
+                with open(cacher.file_path, 'w') as f:
+                    json.dump(cacher, f, indent=2)
+            self.write = defaultWriter
+
+
+        data={}
         if os.path.isfile(self.file_path):
-            with open(self.file_path, 'r') as f:
-                self.data = json.load(f)
-        for k, v in list(self.data.items()):
-            if isinstance(v, dict):
-                self.data[k] = Cacher.WrappedDict(self, v)
-            elif isinstance(v, list):
-                self.data[k] = Cacher.WrappedList(self, v)
+            data = self.wrap_item(self.read(self))
 
-    def __getitem__(self, key):
-        return self.data.get(key, None)
+        super().__init__(data)
 
-    def __setitem__(self, key, value):
-        if isinstance(value, dict):
-            value = Cacher.WrappedDict(self, value)
-        elif isinstance(value, list):
-            value = Cacher.WrappedList(self, value)
-        self.data[key] = value
-        self.save()
+
+    def wrap_item(self, v):
+        if isinstance(v, dict):
+            return Cacher.WrappedDict(self, v)
+        elif isinstance(v, list):
+            return Cacher.WrappedList(self, v)
+        else:
+            return v
+
+    def unwrap_item(self, v):
+        if isinstance(v, Cacher.WrappedDict):
+            return {sk:self.unwrap_item(sv) for sk,sv in v}
+        elif isinstance(v, Cacher.WrappedList):
+            return [self.unwrap_item(sv) for sv in v]
+        else:
+            return v
+
+    def copy(self):
+        return {sk:self.unwrap_item(sv) for sk,sv in self.items()}
 
     def save(self):
-        os.makedirs(os.path.dirname(self.file_path), exist_ok=True)
-        with open(self.file_path, 'w') as f:
-            json.dump(self.data, f, indent=2)
+        self.write(self)
+
+    def __getitem__(self, k):
+        if not k in self.keys():
+            self[k] = Cacher.WrappedDict(self,{})
+        return super().__getitem__(k)
+
+    def __setitem__(self, k, v):
+        super().__setitem__(k, self.wrap_item(v))
+        self.save()
+
+    def __delitem__(self, k):
+        super().__delitem__(k)
+        self.save()
+
+    def clear(self):
+        super().clear()
+        self.save()
+
+    def pop(self, k, *args):
+        val = super().pop(k, *args)
+        self.save()
+        return val
+
+    def popitem(self):
+        val = super().popitem()
+        self.save()
+        return val
+
+    def update(self, *args, **kwargs):
+        wrapped_args = []
+        for mapping in args:
+            wrapped_args.append({k: self.wrap_item(v) for k, v in mapping.items()})
+        wrapped_kwargs = {k: self.wrap_item(v) for k, v in kwargs.items()}
+        super().update(*wrapped_args, **wrapped_kwargs)
+        self.save()
+
+    def setdefault(self, k, default=None):
+        val = super().setdefault(k, self.wrap_item(default))
+        self.save()
+        return val
 
     class WrappedList(list):
         def __init__(self, parent, iterable=()):
-            super().__init__(self._wrap_items(iterable))
+            super().__init__([self.wrap_item(v) for v in iterable])
             self.parent = parent
 
-        @staticmethod
-        def _wrap_items(iterable):
-            wrapped = []
-            for i, item in enumerate(iterable):
-                if isinstance(item, dict):
-                    wrapped.append(Cacher.WrappedDict(self, item))
-                elif isinstance(item, list):
-                    wrapped.append(Cacher.WrappedList(self, item))
-                else:
-                    wrapped.append(item)
-            return wrapped
+        def wrap_item(self, v):
+            if isinstance(v, dict):
+                return Cacher.WrappedDict(self, v)
+            elif isinstance(v, list):
+                return Cacher.WrappedList(self, v)
+            else:
+                return v
+
+        def unwrap_item(self, v):
+            if isinstance(v, Cacher.WrappedDict):
+                return {sk:self.unwrap_item(sv) for sk,sv in v}
+            elif isinstance(v, Cacher.WrappedList):
+                return [self.unwrap_item(sv) for sv in v]
+            else:
+                return v
+
+        def copy(self):
+            return [self.unwrap_item(sv) for sv in self]
 
         def save(self):
             self.parent.save()
 
         def append(self, item):
-            if isinstance(item, dict):
-                super().append(Cacher.WrappedDict(self, item))
-            elif isinstance(item, list):
-                super().append(Cacher.WrappedList(self, item))
-            else:
-                super().append(item)
+            super().append(self.wrap_item(item))
             self.parent.save()
 
         def extend(self, iterable):
-            super().extend(self._wrap_items(iterable))
+            super().extend(self.wrap_item(iterable))
             self.parent.save()
 
         def insert(self, index, item):
-            if isinstance(item, dict):
-                super().insert(index, Cacher.WrappedDict(self, item))
-            elif isinstance(item, list):
-                super().insert(index, Cacher.WrappedList(self, item))
-            else:
-                super().insert(index, item)
+            super().insert(index, self.wrap_item(item))
             self.parent.save()
 
         def remove(self, item):
@@ -94,13 +156,8 @@ class Cacher:
             super().reverse()
             self.parent.save()
 
-        def __setitem__(self, index, value):
-            if isinstance(value, dict):
-                super().__setitem__(index, Cacher.WrappedDict(self, value))
-            elif isinstance(value, list):
-                super().__setitem__(index, Cacher.WrappedList(self, value))
-            else:
-                super().__setitem__(index, value)
+        def __setitem__(self, index, v):
+            super().__setitem__(index, self.wrap_item(v))
             self.parent.save()
 
         def __delitem__(self, index):
@@ -109,26 +166,36 @@ class Cacher:
 
     class WrappedDict(dict):
         def __init__(self, parent, mapping=(), **kwargs):
-            super().__init__(self._wrap_items(mapping), **kwargs)
+            super().__init__({k: self.wrap_item(v) for k,v in mapping.items()}, **kwargs)
             self.parent = parent
 
-        @staticmethod
-        def _wrap_items(mapping):
-            wrapped = {}
-            for k, v in mapping.items():
-                if isinstance(v, dict):
-                    wrapped[k] = Cacher.WrappedDict(self, v)
-                elif isinstance(v, list):
-                    wrapped[k] = Cacher.WrappedList(self, v)
-                else:
-                    wrapped[k] = v
-            return wrapped
+        def wrap_item(self, v):
+            if isinstance(v, dict):
+                return Cacher.WrappedDict(self, v)
+            elif isinstance(v, list):
+                return Cacher.WrappedList(self, v)
+            else:
+                return v
+
+        def unwrap_item(self, v):
+            if isinstance(v, Cacher.WrappedDict):
+                return {sk:self.unwrap_item(sv) for sk,sv in v}
+            elif isinstance(v, Cacher.WrappedList):
+                return [self.unwrap_item(sv) for sv in v]
+            else:
+                return v
+
+        def copy(self):
+            return {sk:self.unwrap_item(sv) for sk,sv in self.items()}
 
         def save(self):
             self.parent.save()
 
+        def __getitem__(self, k):
+            return self.setdefault(k, Cacher.WrappedDict(self,{}))
+
         def __setitem__(self, k, v):
-            super().__setitem__(k, v)
+            super().__setitem__(k, self.wrap_item(v))
             self.parent.save()
 
         def __delitem__(self, k):
@@ -150,15 +217,14 @@ class Cacher:
             return val
 
         def update(self, *args, **kwargs):
-            super().update(*args, **kwargs)
+            wrapped_args = []
+            for mapping in args:
+                wrapped_args.append({k: self.wrap_item(v) for k, v in mapping.items()})
+            wrapped_kwargs = {k: self.wrap_item(v) for k, v in kwargs.items()}
+            super().update(*wrapped_args, **wrapped_kwargs)
             self.parent.save()
 
         def setdefault(self, k, default=None):
-            if isinstance(default, dict):
-                super().setdefault(k, Cacher.WrappedDict(self, default))
-            elif isinstance(default, list):
-                super().setdefault(k, Cacher.WrappedList(self, default))
-            else:
-                super().setdefault(k, default)
+            val = super().setdefault(k, self.wrap_item(default))
             self.parent.save()
             return val

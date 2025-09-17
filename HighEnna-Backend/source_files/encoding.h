@@ -59,43 +59,36 @@ void buffer_encode(const std::vector<uint16_t>& input, std::vector<uint8_t>& out
 }
 
 void buffer_decompress(const std::vector<uint16_t>& compressed, std::vector<uint8_t>& output) {
-    try {
-        if (compressed.empty())
-            throw std::runtime_error("Compressed input is empty");
+    if (compressed.empty())
+        throw std::runtime_error("Compressed input is empty");
 
-        std::unordered_map<uint16_t, std::vector<uint8_t>> dictionary;
-        uint16_t dict_size = 256;
-        for (uint16_t i = 0; i < 256; i++) {
-            dictionary[i] = {static_cast<uint8_t>(i)};
+    std::unordered_map<uint16_t, std::vector<uint8_t>> dictionary;
+    uint16_t dict_size = 256;
+    for (uint16_t i = 0; i < 256; i++) {
+        dictionary[i] = {static_cast<uint8_t>(i)};
+    }
+
+    std::vector<uint8_t> w = {static_cast<uint8_t>(compressed[0])};
+    output = w;
+
+    std::vector<uint8_t> entry;
+    for (size_t i = 1; i < compressed.size(); i++) {
+        uint16_t k = compressed[i];
+        if (dictionary.count(k)) {
+            entry = dictionary[k];
+        } else if (k == dict_size) {
+            entry = w;
+            entry.push_back(w[0]);
+        } else {
+            throw std::runtime_error("Invalid or corrupted compressed stream: unexpected dictionary value.");
         }
 
-        std::vector<uint8_t> w = {static_cast<uint8_t>(compressed[0])};
-        output = w;
+        output.insert(output.end(), entry.begin(), entry.end());
 
-        std::vector<uint8_t> entry;
-        for (size_t i = 1; i < compressed.size(); i++) {
-            uint16_t k = compressed[i];
-            if (dictionary.count(k)) {
-                entry = dictionary[k];
-            } else if (k == dict_size) {
-                entry = w;
-                entry.push_back(w[0]);
-            } else {
-                throw std::runtime_error("Unexpected dictionary value at position " + std::to_string(i));
-            }
+        dictionary[dict_size++] = w;
+        dictionary[dict_size - 1].push_back(entry[0]);
 
-            output.insert(output.end(), entry.begin(), entry.end());
-
-            dictionary[dict_size++] = w;
-            dictionary[dict_size - 1].push_back(entry[0]);
-
-            w = entry;
-        }
-        return;
-    } catch (const std::runtime_error& e) {
-        throw py::value_error(std::string("Decompression failed: ") + e.what());
-    } catch (const std::exception& e) {
-        throw std::runtime_error(std::string("Decompression unexpected error: ") + e.what());
+        w = entry;
     }
 }
 

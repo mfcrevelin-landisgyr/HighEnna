@@ -28,7 +28,7 @@ class Project:
 
         self.project_path = project_path
         self.project_name = os.path.basename(project_path)
-        self.project_cache = Cacher(os.path.join(project_path,".cache"))
+        self.project_cache = Cacher(os.path.join(project_path,".project_cache"))
         
         # Open Tpy Files
         for entry in os.listdir(project_path):
@@ -51,14 +51,21 @@ class Project:
         self.is_open = False
 
     def update(self):
+        changed = False
+
         for entry in [entry for entry in self.tpy_files.keys() if not os.path.exists(os.path.join(self.project_path, entry))]:
             del self.tpy_files[entry]
+            changed = True
 
         for entry in sorted(os.listdir(self.project_path)):
             entry_path = os.path.join(self.project_path,entry)
             if entry in self.tpy_files:
                 if os.path.getmtime(entry_path) > self.tpy_files[entry].mod_time:
                     self.tpy_files[entry].update()
+                    changed = True
             else:
                 if os.path.isfile(entry_path) and entry.endswith('.tpy'):
                     self.tpy_files[entry] = TpyFile(self.dictionary, entry_path)
+                    changed = True
+
+        return changed
