@@ -5,6 +5,7 @@ from PyQt6.QtGui import *
 from custom_qt import *
 from project import *
 
+from imports_window import ImportsWindow
 from tpy_view import TpyView
 from cacher import Cacher
 
@@ -58,6 +59,13 @@ class MainWindow(QMainWindow):
         self.adjust_size()
 
 
+        # _timer = QTimer(self)
+        # _timer.setSingleShot(True)
+        # _timer.timeout.connect(self.imports_slot)
+        # _timer.start(500)
+
+
+
     def init_ui(self):
         self.init_menubar()
 
@@ -75,7 +83,12 @@ class MainWindow(QMainWindow):
         self.scroll_area.setWidget(self.scroll_area_widget)
 
         self.main_layout.addWidget(self.scroll_area)
+
+        self.footer = CFooter()
         
+        self.main_layout.addWidget(self.footer)
+
+        CFooter.broadcast("All ready", 2000)
 
     def init_menubar(self):
 
@@ -97,12 +110,13 @@ class MainWindow(QMainWindow):
                 {"option": "Exit", "keybinding": "Ctrl+W", "slot": self.exit_slot},
             ],
             "Edit": [
-                {"option": "Imports", "keybinding": "Ctrl+M", "slot": self.imports_slot},
+                {"option": "Imports", "keybinding": "Ctrl+I", "slot": self.imports_slot},
                 None,
                 {"option": "Prefereces", "keybinding": "Ctrl+P", "slot": self.prefereces_slot},
             ],
             "View": [
-                {"option": "Colapse All", "keybinding": None, "slot": self.colapse_all_slot},
+                {"option": "Colapse All", "keybinding": "Ctrl+Left", "slot": self.colapse_all_slot},
+                {"option": "Expand All", "keybinding": "Ctrl+Right", "slot": self.expand_all_slot},
             ],
             "Help": [
                 {"option": "Documentation", "keybinding": "Ctrl+1", "slot": self.documentation_slot},
@@ -205,19 +219,15 @@ class MainWindow(QMainWindow):
     def save_all_slot(self):
         for tpy_file in self.project.tpy_files.values():
             tpy_file.save()
-        msg = QMessageBox(self)
-        msg.setWindowTitle("Save")
-        msg.setText("Saved.")
-        msg.exec()
+        CFooter.broadcast("All scripts saved.", 1500)
 
     def save_slot(self):
         active_tpy_entry = self.project.project_cache['active_tpy_entry']
         if active_tpy_entry:
             self.project.tpy_files[active_tpy_entry].save()
-        msg = QMessageBox(self)
-        msg.setWindowTitle("Save")
-        msg.setText("Saved.")
-        msg.exec()
+            CFooter.broadcast("{script} saved.".format(script=re.sub(r'\.\w+$','',active_tpy_entry)), 1500)
+        else:
+            CFooter.broadcast("No script selected.", 1500)
 
     def render_all_slot(self):
         QMessageBox.information(self, "render_all_slot", "render_all_slot")
@@ -232,17 +242,34 @@ class MainWindow(QMainWindow):
         else:
             self.close()
 
-    def undo_slot(self):
-        QMessageBox.information(self, "undo_slot", "undo_slot")
-
-    def redo_slot(self):
-        QMessageBox.information(self, "redo_slot", "redo_slot")
-
     def prefereces_slot(self):
         QMessageBox.information(self, "prefereces_slot", "prefereces_slot")
 
     def imports_slot(self):
-        QMessageBox.information(self, "imports_slot", "imports_slot")
+        if self.project.is_open:
+
+            receivers = [v for v in self.project.tpy_files.keys()]
+            if not receivers:
+                CFooter.broadcast("Project has no template files.", 1500)
+                return
+
+            assignees = [self.project.uuid_to_name[v] for v in self.project.project_cache["modules"]['modules_set']]
+            if not assignees:
+                CFooter.broadcast("Project has no module files.", 1500)
+                return
+
+            relations = { k:[ self.project.uuid_to_name[v] for v in l ] for k,l in self.project.project_cache["modules"]['modules_assigment'].items() }
+
+            def handle_assignments(result):
+                self.project.project_cache["modules"]['modules_assigment'] = {
+                    k:[ self.project.name_to_uuid[v] for v in l ] for k,l in result.items()
+                }
+
+            window = ImportsWindow(self, receivers, assignees, relations)
+            window.applied.connect(handle_assignments)  # connect signal to handler
+            window.show()
+        else:
+            CFooter.broadcast("No project open.", 1500)
 
     def documentation_slot(self):
         QMessageBox.information(self, "documentation_slot", "documentation_slot")
@@ -251,14 +278,16 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "about_slot", "about_slot")
 
     def colapse_all_slot(self):
-        self.project.project_cache['active_tpy_entry']=None
+        self.project.project_cache['active_tpy_entry'] = None
         for tpy_view in self.tpy_views.values():
-            tpy_view.tab_widget.setHidden(True)
-            tpy_view.cache["is_closed"] = True
+            if not tpy_view.project_cache["is_closed"]:
+                tpy_view.on_title_label_left_clicked()
 
-            font = tpy_view.title_label.font()
-            font.setBold(False)
-            tpy_view.title_label.setFont(font)
+    def expand_all_slot(self):
+        self.project.project_cache['active_tpy_entry'] = None
+        for tpy_view in self.tpy_views.values():
+            if tpy_view.project_cache["is_closed"]:
+                tpy_view.on_title_label_left_clicked()
 
 #--- Main Window Utils --- #
 
@@ -371,12 +400,13 @@ class MainWindow(QMainWindow):
         self.project.open(new_path)
         self.setWindowTitle(APPLICATION_NAME + ' - (' + self.project.project_name + ')')
         self.project.project_cache['active_tpy_entry'] = None
-        self.watcher.addPath(new_path)
+        self.watcher.addPaths([new_path,self.project.modules_path])
         self.populate()
 
     def close_project(self):
-        self.watcher.removePaths(self.watcher.files())
-        self.watcher.removePaths(self.watcher.directories())
+        remove_paths = self.watcher.files()+self.watcher.directories()
+        if remove_paths:
+            self.watcher.removePaths(remove_paths)
         self.project.close()
         self.setWindowTitle(APPLICATION_NAME)
         self.clear()

@@ -1,7 +1,6 @@
 from collections import deque
 
 class Table:
-    ir=0
     def __init__(self, default_text = '', allow_empty=False):
         self.column_names = []
         self.data = [] if allow_empty else [[]]
@@ -13,13 +12,15 @@ class Table:
 
         self.default_text = default_text
 
-
+        self.siblings = []
 
     def __len__(self):
         return len(self.data)
     def __bool__(self):
         return bool(self.column_names) and bool(self.data)
 
+    def couple_sibling(self,table):
+        self.siblings.append(table)
 
     # --- Undo/Redo ---
 
@@ -28,18 +29,30 @@ class Table:
         self.redo_stack.clear()
 
     def undo(self):
+        self._undo()
+        for sibling in self.siblings:
+            sibling._undo()
+
+    def _undo(self):
         if not self.undo_stack:
             return
         action, data = self.undo_stack.pop()
         self.redo_stack.append((action, data))
-        self._perform_undo(action, data)
+        if not action == "null":
+            self._perform_undo(action, data)
 
     def redo(self):
+        self._redo()
+        for sibling in self.siblings:
+            sibling._redo()
+
+    def _redo(self):
         if not self.redo_stack:
             return
         action, data = self.redo_stack.pop()
         self.undo_stack.append((action, data))
-        self._perform_redo(action, data)
+        if not action == "null":
+            self._perform_redo(action, data)
 
     def _perform_redo(self, action, data):
         getattr(self, f"_{action}")(data, False)
@@ -70,6 +83,8 @@ class Table:
             raise IndexError(f"Column index {items[0][0]} out of bounds")
 
         self._insert_column(items_)
+        for sibling in self.siblings:
+            sibling._record_undo("null", ())
 
     def _insert_column(self, items, record_undo=True):
         undo_data = []
@@ -92,6 +107,8 @@ class Table:
     def remove_column(self, items):
         items = sorted(items, key=lambda x: x[0], reverse=True)
         self._remove_column(items)
+        for sibling in self.siblings:
+            sibling._record_undo("null", ())
 
     def _remove_column(self, items, record_undo=True):
         undo_data = []
@@ -131,14 +148,12 @@ class Table:
         
 
         if items:
-            Table.ir+=1
-            if Table.ir>=11:
-                # print(Table.ir)
-                import pdb; pdb.set_trace()
             items = sorted(items, key=lambda x: x[0])
             raise IndexError(f"Row index {items[0][0]} out of bounds")
 
         self._insert_row(items_)
+        for sibling in self.siblings:
+            sibling._insert_row(items_)
 
     def _insert_row(self, items, record_undo=True):
 
@@ -178,6 +193,8 @@ class Table:
             raise IndexError(f"Row index {items[0][0]} out of bounds")
 
         self._duplicate_row(items_)
+        for sibling in self.siblings:
+            sibling._duplicate_row(items_)
 
     def _duplicate_row(self, items, record_undo=True):
         undo_data = []
@@ -198,7 +215,9 @@ class Table:
 
     def remove_row(self, items):
         items = [sorted(items, key=lambda x: x[0], reverse=True)]
-        self._remove_row(items)
+        self._remove_row(items) 
+        for sibling in self.siblings:
+            sibling._remove_row(items) 
 
     def _remove_row(self, items, record_undo=True):
         undo_data = [[],False]
@@ -232,6 +251,10 @@ class Table:
         old_data = [row[:] for row in self.data]
         self._clear(old_data)
 
+        for sibling in self.siblings:
+            old_data = [row[:] for row in sibling.data]
+            sibling._clear(old_data)
+
     def _clear(self, old_data, record_undo=True):
         self.data = [] if self.allow_empty else [[]]
 
@@ -246,10 +269,14 @@ class Table:
     def clear_cell(self, items):
         items = [(row, col, self.default_text, self.data[row][col]) for row, col in items]
         self._set_cell(items)
+        for sibling in self.siblings:
+            sibling._record_undo("null", ())
 
     def set_cell(self, items):
         items = [(row, col, new, self.data[row][col]) for row, col, new in items]
         self._set_cell(items)
+        for sibling in self.siblings:
+            sibling._record_undo("null", ())
 
     def _set_cell(self, items, record_undo=True):
         undo_data = []
@@ -275,6 +302,9 @@ class Table:
 
     def move_column(self, items):
         self._move_column(items)
+        for sibling in self.siblings:
+            sibling._record_undo("null", ())
+
 
     def _move_column(self, items, record_undo=True):
         undo_data = []
@@ -300,6 +330,8 @@ class Table:
 
     def move_row(self, items):
         self._move_row(items)
+        for sibling in self.siblings:
+            sibling._move_row(items)
 
     def _move_row(self, items, record_undo=True):
         undo_data = []

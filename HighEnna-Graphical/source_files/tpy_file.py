@@ -47,31 +47,30 @@ class TpyFile:
         self.parse_result = highennabackend.parse(self.file_content)
 
         if not is_update:
-            def reader(cacher):
+            def reader():
                 stream = b''.join([self.file_content[start:end] for _,start,end in self.parse_result['cache']['lines']])
                 if stream:
-                    return json.loads(highennabackend.decode(stream).decode())
-                return {}
+                    return highennabackend.decode(stream).decode()
+                return '{}'
 
-            def writer(cacher):
-                start,end = cacher.tpy_file.parse_result['cache']['location']
-                length = len(cacher.tpy_file.file_content)
-                stream = highennabackend.encode(json.dumps(cacher).encode())
-                with open(cacher.file_path,'wb') as f:
+            def writer(file_path,serialization):
+                start,end = self.parse_result['cache']['location']
+                length = len(self.file_content)
+                stream = highennabackend.encode(serialization.encode())
+                with open(file_path,'wb') as f:
                     f.write(
-                            cacher.tpy_file.file_content[:start]+
+                            self.file_content[:start]+
                             "R'''\n$$$\n".encode()+
                             b'\n'.join(stream[i:i+126] for i in range(0, len(stream), 126))+
                             "\n$$$\n'''\n".encode()+
-                            cacher.tpy_file.file_content[end:]
+                            self.file_content[end:]
                         )
-                cacher.tpy_file.mod_time = os.path.getmtime(self.tpy_file_path)
+                self.mod_time = os.path.getmtime(self.tpy_file_path)
 
 
             self.file_cache = Cacher(self.tpy_file_path,
                     reader=reader,
-                    writer=writer,
-                    attributes=self.dictionary
+                    writer=writer
                 )
 
             if self.parse_result['cache']['found']:
@@ -157,9 +156,6 @@ class TpyFile:
         self.file_cache['table_data']['vals_table']["column_names"] = self.vals_table.column_names
         self.file_cache['table_data']['vals_table']["data"] = self.vals_table.data
 
-
-
-
     def remove_obsolete(self):
 
         obsolete_vars = [(i,) for i,var in enumerate(self.vars_table.column_names)
@@ -171,7 +167,6 @@ class TpyFile:
             self.vars_table.remove_column(obsolete_vars)
         if obsolete_vals:
             self.vals_table.remove_column(obsolete_vals)
-
 
     def start_up(self):
         self.load_file(is_update=False)

@@ -96,7 +96,7 @@ class TpyView:
             self.project_cache["is_closed"] = new_val
             self.on_frame_clicked()
         else:
-            CToolTip(self.main_window, QCursor.pos(), "Nothing to edit")
+            CFooter.broadcast("Nothing to edit on {script}.".format(script=re.sub(r'\.\w+$','',self.tpy_file.tpy_file_name)), 1500)
 
     def on_title_label_right_clicked(self):
         self.on_frame_clicked()
@@ -114,18 +114,7 @@ class TpyView:
     def update_size_hint(self):
         current_tab = self.tab_widget.currentWidget()
         if current_tab is not None:
-            hint = current_tab.sizeHint()
-            max_height = int(self.main_window.height() * 3 / 4)
-            target_height = min(hint.height() + self.tab_widget.tabBar().height(), max_height)
-            self.tab_widget.setMinimumHeight(target_height)
-            self.tab_widget.updateGeometry()
-
-    def update_size_hint(self):
-        current_tab = self.tab_widget.currentWidget()
-        if current_tab is not None:
-            hint = current_tab.sizeHint()
-            max_height = int(self.main_window.height() * 3 / 4)
-            self.tab_widget.setMinimumHeight(hint.height() + self.tab_widget.tabBar().height())
+            self.tab_widget.setMinimumHeight(current_tab.sizeHint().height() + self.tab_widget.tabBar().height())
             self.tab_widget.updateGeometry()
 
     def populate(self):
@@ -146,17 +135,14 @@ class TpyView:
 
         self.render_button = QPushButton("Render")
         self.render_button.setFixedWidth(100)
-        self.render_button.installEventFilter(self.frame)
         hbox_layout.addWidget(self.render_button)
 
         self.vbox_layout.addLayout(hbox_layout)
 
         # ---------------------------------------------------------------------------
 
-        self.tab_widget = QTabWidget()
+        self.tab_widget = CTabWidget(self.main_window)
         self.tab_widget.tabBar().setMovable(False)
-        self.tab_widget.installEventFilter(self.frame)
-        self.tab_widget.tabBar().installEventFilter(self.frame)
 
         if any([
                 bool(self.tpy_file.vars_table),
@@ -170,71 +156,15 @@ class TpyView:
                 self.scripts_table_view = CTableView(self.dictionary, self.tpy_file.scripts_table)
                 self.scripts_table_view.resizeColumnsToContents()
                 self.scripts_table_view.resizeRowsToContents()
-                self.scripts_table_view.installEventFilter(self.frame)
 
                 self.vars_table_view = CTableView(self.dictionary, self.tpy_file.vars_table)
                 self.vars_table_view.resizeColumnsToContents()
                 self.vars_table_view.resizeRowsToContents()
-                self.vars_table_view.installEventFilter(self.frame)
 
-                def createVarsContextMenu(table_view, position, index_at):
-                    menu = QMenu()
+                self.vars_table_view.couple_sibling(self.scripts_table_view)
+                self.scripts_table_view.couple_sibling(self.vars_table_view)
 
-                    selected_indices = table_view.selectedIndexes()
-
-                    if any(index_at.row() == idx.row() for idx in selected_indices):
-                        rows = [(row,) for row in {idx.row() for idx in selected_indices}]
-                    else:
-                        table_view.selectionModel().clearSelection()
-                        rows = [(index_at.row(),)]
-
-                    if len(rows)>1:
-                        delete_action = menu.addAction("Delete Rows")
-                        duplicate_action = menu.addAction("Duplicate rows")
-
-                        row_above_action = menu.addAction("Insert Row Above Each")
-                        row_below_action = menu.addAction("Insert Row Below Each")
-                    else:
-                        delete_action = menu.addAction("Delete Row")
-                        duplicate_action = menu.addAction("Duplicate row")
-
-                        row_above_action = menu.addAction("Insert Row Above")
-                        row_below_action = menu.addAction("Insert Row Below")
-
-                    n_rows_action = menu.addAction("Add N Rows")
-
-                    menu.addSeparator()
-
-                    remove_obsolete_action = menu.addAction("Remove Obsolete")
-
-                    action = menu.exec(position)
-
-                    if action == row_above_action:
-                        for table_view in table_view.siblings:
-                            table_view.table_model.insert_row(rows)
-                    elif action == row_below_action:
-                        rows = [(row+1,) for row,*_ in rows]
-                        for table_view in table_view.siblings:
-                            table_view.table_model.insert_row(rows)
-                    elif action == n_rows_action:
-                        num, ok = QInputDialog.getInt(table_view, "", "Number of rows:", 1, 1)
-                        if ok:
-                            length = table_view.table_model.rowCount()
-                            for table_view in table_view.siblings:
-                                table_view.table_model.insert_row([(length+i,) for i in range(num)])
-                    elif action == delete_action:
-                        for table_view in table_view.siblings:
-                            table_view.table_model.remove_row(rows)
-                    elif action == duplicate_action:
-                        for table_view in table_view.siblings:
-                            table_view.table_model.duplicate_row(rows)
-                    elif action == remove_obsolete_action:
-                        for table_view in table_view.siblings:
-                            table_view.tpy_view.tpy_file.remove_obsolete()
-                    
-                    self.update_size_hint()
-
-                def createScriptsContextMenu(table_view, position, index_at):
+                def createContextMenu(text,remove_obsolete,table_view, position, index_at):
                     menu = QMenu()
 
                     selected_indices = table_view.selectedIndexes()
@@ -249,54 +179,56 @@ class TpyView:
                         render_action = menu.addAction("Render Scripts")
 
                         menu.addSeparator()
-                        
-                        delete_action = menu.addAction("Delete Scripts")
-                        duplicate_action = menu.addAction("Duplicate Scripts")
 
-                        row_above_action = menu.addAction("Insert Script Above Each")
-                        row_below_action = menu.addAction("Insert Script Below Each")
+                        delete_action = menu.addAction(f"Delete {text}s")
+                        duplicate_action = menu.addAction(f"Duplicate {text}s")
+
+                        row_above_action = menu.addAction(f"Insert {text} Above Each")
+                        row_below_action = menu.addAction(f"Insert {text} Below Each")
                     else:
                         render_action = menu.addAction("Render Script")
 
                         menu.addSeparator()
-                        
-                        delete_action = menu.addAction("Delete Script")
-                        duplicate_action = menu.addAction("Duplicate Script")
 
-                        row_above_action = menu.addAction("Insert Script Above")
-                        row_below_action = menu.addAction("Insert Script Below")
+                        delete_action = menu.addAction(f"Delete {text}")
+                        duplicate_action = menu.addAction(f"Duplicate {text}")
 
-                    n_rows_action = menu.addAction("Add N Scripts")
+                        row_above_action = menu.addAction(f"Insert {text} Above")
+                        row_below_action = menu.addAction(f"Insert {text} Below")
+
+                    n_rows_action = menu.addAction(f"Add N {text}s")
+
+                    if remove_obsolete: menu.addSeparator()
+                    remove_obsolete_action = menu.addAction("Remove Obsolete Columns") if remove_obsolete else (None,None)
 
                     action = menu.exec(position)
 
                     if action == row_above_action:
-                        for table_view in table_view.siblings:
-                            table_view.table_model.insert_row(rows)
+                        self.vars_table_view.table_model.insert_row(rows)
                     elif action == row_below_action:
                         rows = [(row+1,) for row,*_ in rows]
-                        for table_view in table_view.siblings:
-                            table_view.table_model.insert_row(rows)
+                        self.vars_table_view.table_model.insert_row(rows)
                     elif action == n_rows_action:
                         num, ok = QInputDialog.getInt(table_view, "", "Number of rows:", 1, 1)
                         if ok:
                             length = table_view.table_model.rowCount()
-                            for table_view in table_view.siblings:
-                                table_view.table_model.insert_row([(length+i,) for i in range(num)])
+                            self.vars_table_view.table_model.insert_row([(length+i,) for i in range(num)])
                     elif action == delete_action:
-                        for table_view in table_view.siblings:
-                            table_view.table_model.remove_row(rows)
+                        self.vars_table_view.table_model.remove_row(rows)
                     elif action == duplicate_action:
-                        for table_view in table_view.siblings:
-                            table_view.table_model.duplicate_row(rows)
+                        self.vars_table_view.table_model.duplicate_row(rows)
+                    elif action == remove_obsolete_action:
+                        self.vars_table_view.tpy_view.tpy_file.remove_obsolete()
                     
                     self.update_size_hint()
 
+                def createVarsContextMenu(table_view, position, index_at):
+                    createContextMenu("Row",True,table_view, position, index_at)
+                def createScriptsContextMenu(table_view, position, index_at):
+                    createContextMenu("Script",False,table_view, position, index_at)
+
                 self.vars_table_view.createContextMenu = createVarsContextMenu
                 self.scripts_table_view.createContextMenu = createScriptsContextMenu
-
-                self.vars_table_view.siblings.append(self.scripts_table_view)
-                self.scripts_table_view.siblings.append(self.vars_table_view)
             else:
                 self.vars_table_view = QWidget()
                 self.scripts_table_view = QWidget()
@@ -315,7 +247,6 @@ class TpyView:
                 self.vals_table_view = CTableView(self.dictionary, self.tpy_file.vals_table)
                 self.vals_table_view.resizeColumnsToContents()
                 self.vals_table_view.resizeRowsToContents()
-                self.vals_table_view.installEventFilter(self.frame)
             else:
                 self.vals_table_view = QWidget()
 
@@ -328,7 +259,6 @@ class TpyView:
                 self.errors_table_view = CErrorTableView(self.dictionary, self.tpy_file.errors_table)
                 self.errors_table_view.resizeColumnsToContents()
                 self.errors_table_view.resizeRowsToContents()
-                self.errors_table_view.installEventFilter(self.frame)
             else:
                 self.errors_table_view = QWidget()
 
@@ -374,3 +304,5 @@ class TpyView:
         self.title_label.right_clicked.connect(self.on_title_label_right_clicked)
         self.render_button.clicked.connect(self.on_render_button_clicked)
         self.tab_widget.currentChanged.connect(self.on_tab_widget_currentChanged)
+
+        self.frame.install_recursive_event_filter()
