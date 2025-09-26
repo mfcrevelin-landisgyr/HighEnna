@@ -29,7 +29,7 @@ class TpyView:
         active_key = self.project.project_cache['active_tpy_entry']
         is_active = active_key == self.tpy_file.tpy_file_name
         is_closed = self.project_cache['is_closed']
-        
+
         if any([
                 not is_closed and is_active,
                 is_closed and not is_active
@@ -91,16 +91,23 @@ class TpyView:
                 bool(self.tpy_file.errors_table.data),
             ]):
 
-            new_val = not self.tab_widget.isHidden()
-            self.tab_widget.setHidden(new_val)
-            self.project_cache["is_closed"] = new_val
+            active_key = self.project.project_cache['active_tpy_entry']
+            is_active = (active_key == self.tpy_file.tpy_file_name)
+            is_closed = self.project_cache['is_closed']
+
+            if is_closed:
+                self.tab_widget.setHidden(False)
+                self.project_cache["is_closed"] = False
+            elif is_active:
+                self.tab_widget.setHidden(True)
+                self.project_cache["is_closed"] = True
+            
             self.on_frame_clicked()
         else:
             CFooter.broadcast("Nothing to edit on {script}.".format(script=re.sub(r'\.\w+$','',self.tpy_file.tpy_file_name)), 1500)
 
     def on_title_label_right_clicked(self):
-        self.on_frame_clicked()
-        pass
+        self.on_title_label_left_clicked()
 
     def on_render_button_clicked(self):
         pass
@@ -149,7 +156,7 @@ class TpyView:
                 bool(self.tpy_file.vals_table),
                 bool(self.tpy_file.errors_table.data),
             ]):
-        
+
             self.tab_widget.setHidden(self.project_cache["is_closed"])
 
             if self.tpy_file.vars_table:
@@ -219,7 +226,7 @@ class TpyView:
                         self.vars_table_view.table_model.duplicate_row(rows)
                     elif action == remove_obsolete_action:
                         self.vars_table_view.tpy_view.tpy_file.remove_obsolete()
-                    
+
                     self.update_size_hint()
 
                 def createVarsContextMenu(table_view, position, index_at):
@@ -305,4 +312,4 @@ class TpyView:
         self.render_button.clicked.connect(self.on_render_button_clicked)
         self.tab_widget.currentChanged.connect(self.on_tab_widget_currentChanged)
 
-        self.frame.install_recursive_event_filter()
+        self.frame.recursive_install_event_filter()

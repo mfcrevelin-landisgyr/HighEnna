@@ -1,6 +1,13 @@
 HighEnna-Backend/VS
+HighEnna-Graphical/highennabackend.pyd
+
+HighEnna-Documentation/build/
+HighEnna-Graphical/source_files/assets/html/
+
 HighEnna-Graphical/source_files/__pycache__/
 HighEnna-Graphical/build/
-HighEnna-Installer/Output/
-.vs
+
+
+HighEnna-Installer/output/
+
 Backup

@@ -6,6 +6,7 @@ from custom_qt import *
 from project import *
 
 from imports_window import ImportsWindow
+from docs_window import DocsWindow
 from tpy_view import TpyView
 from cacher import Cacher
 
@@ -29,7 +30,7 @@ APPLICATION_NAME = "High Enna"
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        
+
         self.setWindowTitle(APPLICATION_NAME)
         self.setWindowIcon(QIcon(resource_path("assets\\icons\\icon.png")))
 
@@ -49,7 +50,10 @@ class MainWindow(QMainWindow):
 
         self.tpy_views = {}
         self.active_tpy_view=None
-        
+
+        self.imports_window = None
+        self.docs_window = None
+
         self.init_ui()
 
         current_project_path = self.application_cache['main_window']['current_project_path']
@@ -85,7 +89,7 @@ class MainWindow(QMainWindow):
         self.main_layout.addWidget(self.scroll_area)
 
         self.footer = CFooter()
-        
+
         self.main_layout.addWidget(self.footer)
 
         CFooter.broadcast("All ready", 2000)
@@ -107,7 +111,8 @@ class MainWindow(QMainWindow):
                 {"option": "Render All", "keybinding": "Ctrl+Shift+R", "slot": self.render_all_slot},
                 {"option": "Render", "keybinding": "Ctrl+R", "slot": self.render_slot},
                 None,
-                {"option": "Exit", "keybinding": "Ctrl+W", "slot": self.exit_slot},
+                {"option": "Close", "keybinding": "Ctrl+W", "slot": self.close_slot},
+                {"option": "Exit", "keybinding": "Ctrl+Q", "slot": self.close},
             ],
             "Edit": [
                 {"option": "Imports", "keybinding": "Ctrl+I", "slot": self.imports_slot},
@@ -119,8 +124,8 @@ class MainWindow(QMainWindow):
                 {"option": "Expand All", "keybinding": "Ctrl+Right", "slot": self.expand_all_slot},
             ],
             "Help": [
-                {"option": "Documentation", "keybinding": "Ctrl+1", "slot": self.documentation_slot},
-                {"option": "About", "keybinding": "Ctrl+2", "slot": self.about_slot},
+                {"option": "Documentation", "keybinding": "Ctrl+D", "slot": self.documentation_slot},
+                {"option": "About", "keybinding": "Ctrl+1", "slot": self.about_slot},
             ]
         }
 
@@ -149,13 +154,16 @@ class MainWindow(QMainWindow):
         self.main_window.menu_widgets['File']['Render'].setEnabled(False)
 
 #--- Slots --- #
-    
+
     def on_watcher_directory_changed(self):
         self.watch_debouncer.start(50)
-    
+
     def on_watch_debouncer_timeout(self):
-        if self.project.update():
+        tpy_changed, module_change = self.project.update()
+        if tpy_changed:
             self.populate()
+        if module_change and self.imports_window:
+            self.imports_window.update()
 
 #--- Menu Bar Slots --- #
 
@@ -184,9 +192,9 @@ class MainWindow(QMainWindow):
             self.open_project(new_path)
 
     def new_file_slot(self):
-        current_project_path = self.application_cache['main_window']['current_project_path']
+        current_project_path = self.project.project_path
         if not current_project_path:
-            QMessageBox.warning(self, "No Project Open", "There is no project open.")
+            CFooter.broadcast("There is no project open.")
             return
 
         file_path, _ = QFileDialog.getSaveFileName(
@@ -204,17 +212,46 @@ class MainWindow(QMainWindow):
             file_path += ".tpy"
 
         if os.path.exists(file_path):
-            QMessageBox.warning(self, "File Exists", f"The file '{os.path.basename(file_path)}' already exists.")
+            CFooter.broadcast("File Exists", f"The file '{os.path.basename(file_path)}' already exists.")
             return
 
         try:
             with open(file_path, 'w', encoding='utf-8') as f:
                 pass
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to create file:\n{e}")
+            CFooter.broadcast("Error", f"Failed to create file:\n{e}")
             return
 
+    def new_module_slot(self):
+        current_modules_path = self.project.modules_path
+        if not current_modules_path:
+            CFooter.broadcast("There is no project open.")
+            return
 
+        file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Create New File",
+                current_modules_path,
+                "TPY Files (*.tpy)",
+                options=QFileDialog.Option.DontConfirmOverwrite
+            )
+
+        if not file_path:
+            return
+
+        if not file_path.endswith(".tpy"):
+            file_path += ".tpy"
+
+        if os.path.exists(file_path):
+            CFooter.broadcast("File Exists", f"The file '{os.path.basename(file_path)}' already exists.")
+            return
+
+        try:
+            with open(file_path, 'w', encoding='utf-8') as f:
+                pass
+        except Exception as e:
+            CFooter.broadcast("Error", f"Failed to create file:\n{e}")
+            return
 
     def save_all_slot(self):
         for tpy_file in self.project.tpy_files.values():
@@ -230,12 +267,12 @@ class MainWindow(QMainWindow):
             CFooter.broadcast("No script selected.", 1500)
 
     def render_all_slot(self):
-        QMessageBox.information(self, "render_all_slot", "render_all_slot")
+        CFooter.broadcast("render_all_slot")
 
     def render_slot(self):
-        QMessageBox.information(self, "render_slot", "render_slot")
+        CFooter.broadcast("render_slot")
 
-    def exit_slot(self):
+    def close_slot(self):
         if self.application_cache['main_window']['current_project_path']:
             self.application_cache['main_window']['current_project_path'] = ''
             self.close_project()
@@ -243,39 +280,33 @@ class MainWindow(QMainWindow):
             self.close()
 
     def prefereces_slot(self):
-        QMessageBox.information(self, "prefereces_slot", "prefereces_slot")
+        CFooter.broadcast("prefereces_slot")
 
     def imports_slot(self):
         if self.project.is_open:
 
-            receivers = [v for v in self.project.tpy_files.keys()]
-            if not receivers:
-                CFooter.broadcast("Project has no template files.", 1500)
-                return
+            def apply_assignment(result):
+                self.project.project_cache["modules"]['module_assignments'] = result
+                self.imports_window = None
 
-            assignees = [self.project.uuid_to_name[v] for v in self.project.project_cache["modules"]['modules_set']]
-            if not assignees:
-                CFooter.broadcast("Project has no module files.", 1500)
-                return
+                for tpy_file in self.project.tpy_files.values():
+                    tpy_file.update_modules()
 
-            relations = { k:[ self.project.uuid_to_name[v] for v in l ] for k,l in self.project.project_cache["modules"]['modules_assigment'].items() }
+            self.imports_window = ImportsWindow(self)
+            self.imports_window.applied.connect(apply_assignment)
+            self.imports_window.show()
 
-            def handle_assignments(result):
-                self.project.project_cache["modules"]['modules_assigment'] = {
-                    k:[ self.project.name_to_uuid[v] for v in l ] for k,l in result.items()
-                }
-
-            window = ImportsWindow(self, receivers, assignees, relations)
-            window.applied.connect(handle_assignments)  # connect signal to handler
-            window.show()
         else:
             CFooter.broadcast("No project open.", 1500)
 
     def documentation_slot(self):
-        QMessageBox.information(self, "documentation_slot", "documentation_slot")
+        if not self.docs_window:
+            self.docs_window = DocsWindow(self)
+            self.docs_window.destroyed.connect(lambda: setattr(self, "docs_window", None))
+            self.docs_window.show()
 
     def about_slot(self):
-        QMessageBox.information(self, "about_slot", "about_slot")
+        CFooter.broadcast("about_slot")
 
     def colapse_all_slot(self):
         self.project.project_cache['active_tpy_entry'] = None
@@ -296,9 +327,9 @@ class MainWindow(QMainWindow):
         obsolete_by_file = defaultdict(dict)
         for tpy_file_key, tpy_file in self.project.tpy_files.items():
             obsolete_vars = [var for var in tpy_file.vars_table.column_names
-                             if var not in tpy_file.parse_result['names']['vars']]
+                             if var not in tpy_file.result_parse['names']['vars']]
             obsolete_vals = [val for val in tpy_file.vals_table.column_names
-                             if val not in tpy_file.parse_result['names']['vals']]
+                             if val not in tpy_file.result_parse['names']['vals']]
 
             if obsolete_vars:
                 obsolete_by_file[tpy_file_key]['vars'] = obsolete_vars
@@ -328,7 +359,7 @@ class MainWindow(QMainWindow):
 
             msg.setText(text)
             msg.addButton("OK", QMessageBox.ButtonRole.AcceptRole)
-            
+
             QTimer.singleShot(50,msg.exec)
 
     def populate(self):
@@ -373,7 +404,7 @@ class MainWindow(QMainWindow):
         return mods, key
 
     def adjust_size(self):
-        numer, denom = 5,7
+        numer, denom = 6,7
 
         cursor_pos = QCursor.pos()
         screen = QApplication.screenAt(cursor_pos)
@@ -430,4 +461,23 @@ class MainWindow(QMainWindow):
                     return
 
     def closeEvent(self, event):
-        super().closeEvent(event)
+        if self.imports_window:
+            self.imports_window.close()
+        if self.docs_window:
+            self.docs_window.close()
+        if any(tpy_file.has_unsaved_changes() for tpy_file in self.project.tpy_files.values()):
+            reply = QMessageBox.question(
+                self,
+                "Unsaved Changes",
+                "You have unsaved changes. Do you want to save them?",
+                QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Save
+            )
+
+            if reply == QMessageBox.StandardButton.Save:
+                self.save_all_slot()
+                super().closeEvent(event)
+            elif reply == QMessageBox.StandardButton.Discard:
+                super().closeEvent(event)
+        else:
+            super().closeEvent(event)

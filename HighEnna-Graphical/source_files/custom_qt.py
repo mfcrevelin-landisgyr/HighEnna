@@ -131,12 +131,10 @@ class CLabel(QLabel):
             super().mousePressEvent(event)
 
 class CTableWidget(QTableWidget):
-    def __init__(self, receivers, assignees, relations=None):
-        super().__init__(len(receivers), len(assignees))
-
-        self.receivers = sorted(receivers)
-        self.assignees = sorted(assignees)
-        self.relations = relations or {}
+    def __init__(self, parent_window):
+        super().__init__(0,0)
+        self.parent_window = parent_window
+        self.project = parent_window.parent().project
 
         self.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
         self.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectItems)
@@ -144,9 +142,6 @@ class CTableWidget(QTableWidget):
 
         self.verticalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         self.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        self._init_headers()
-        self._populate_checkboxes()
 
         self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
@@ -157,26 +152,59 @@ class CTableWidget(QTableWidget):
         self.setHorizontalScrollBar(CScrollBar(self))
         self.setVerticalScrollBar(CScrollBar(self))
 
+    def update_table(self):
+        self.setRowCount(len(self.parent_window.receivers))
+        self.setColumnCount(len(self.parent_window.assignees))
+        self._init_headers()
+        self._populate_checkboxes()
+        self.model().dataChanged.emit(
+                self.model().index(0, 0),
+                self.model().index(self.rowCount()-1, self.columnCount()-1)
+            )
+
     def _init_headers(self):
+        self.receiver_map = {i:r for i,r in enumerate(sorted(self.parent_window.receivers))}
+        self.receiver_map.update({r:i for i,r in self.receiver_map.items()})
+
+        self.assignee_map = {i:a for i,a in enumerate(sorted(self.parent_window.assignees,key=lambda uuid: self.project.uuid_to_name[uuid]))}
+        self.assignee_map.update({a:i for i,a in self.assignee_map.items()})
+
         font = QFont("Courier New")
-        self.setVerticalHeaderLabels(self.receivers)
-        for col, assignee in enumerate(self.assignees):
-            item = QTableWidgetItem(assignee)
+
+        for receiver in self.parent_window.receivers:
+            item = QTableWidgetItem(receiver)
             item.setFont(font)
-            self.setHorizontalHeaderItem(col, item)
+            self.setVerticalHeaderItem(self.receiver_map[receiver], item)
+
+        for module_uuid in self.parent_window.assignees:
+            item = QTableWidgetItem(self.project.uuid_to_name[module_uuid])
+            item.setFont(font)
+            self.setHorizontalHeaderItem(self.assignee_map[module_uuid], item)
 
     def _populate_checkboxes(self):
-        for row, receiver in enumerate(self.receivers):
-            assigned_list = self.relations.get(receiver, [])
-            for col, assignee in enumerate(self.assignees):
+        for receiver in self.parent_window.receivers:
+            row = self.receiver_map[receiver]
+            assigned_set = self.parent_window.relations[receiver]
+            for module_uuid in self.parent_window.assignees:
+                col = self.assignee_map[module_uuid]
+
                 checkbox = QCheckBox()
-                checkbox.setChecked(assignee in assigned_list)
+                checkbox.setChecked(module_uuid in assigned_set)
+                checkbox.stateChanged.connect(lambda state, r=receiver, m=module_uuid: self._on_checkbox_changed(r, m, state))
+                
                 widget = QWidget()
                 hlayout = QHBoxLayout(widget)
                 hlayout.addWidget(checkbox)
                 hlayout.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 hlayout.setContentsMargins(2, 2, 2, 2)
+
                 self.setCellWidget(row, col, widget)
+
+    def _on_checkbox_changed(self, receiver, module_uuid, state):
+        if state == Qt.CheckState.Checked.value:
+            self.parent_window.relations[receiver].add(module_uuid)
+        else:
+            self.parent_window.relations[receiver].discard(module_uuid)
 
     def toggle_selected_cells(self):
         selected = self.selectedIndexes()
@@ -255,8 +283,8 @@ class CTableWidget(QTableWidget):
         for row in range(self.rowCount()):
             total_height += self.rowHeight(row)
 
-        total_width += 2 * self.frameWidth() + 15
-        total_height += 2 * self.frameWidth() + 15
+        total_width += 2 * self.frameWidth() + 35
+        total_height += 2 * self.frameWidth() + 5
 
         return QSize(total_width, total_height)
 
@@ -281,11 +309,13 @@ class CTableModel(QAbstractTableModel):
         self.__dict__.update(self.dictionary)
 
         self.table = data_table
-        self.delta_to_saved_version = 0
 
         self.courier_new_font = QFont("Courier New")
 
+        self.siblings = [self]
+
     def couple_sibling(self,table_model):
+        self.siblings.append(table_model)
         self.table.couple_sibling(table_model.table)
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
@@ -305,7 +335,6 @@ class CTableModel(QAbstractTableModel):
         row = index.row()
         col = index.column()
         self.table.set_cell([(row, col, str(value))])
-        self.delta_to_saved_version+=1
         self.dataChanged.emit(index, index, [role])
         return True
 
@@ -330,12 +359,13 @@ class CTableModel(QAbstractTableModel):
     def supportedDragActions(self):
         return Qt.DropAction.MoveAction
 
-    def apply_table_action(self,table_action,*args,delta=1):
-        self.beginResetModel()
+    def apply_table_action(self,table_action,*args):
+        for table_model in self.siblings:
+            table_model.beginResetModel()
         table_action(*args)
-        self.endResetModel()
-        self.delta_to_saved_version+=delta
-        self.emit_data_change()
+        for table_model in self.siblings:
+            table_model.endResetModel()
+            table_model.emit_data_change()
 
     def handle_column_move(self, from_index, to_index):
         if from_index == to_index:
@@ -366,7 +396,7 @@ class CTableModel(QAbstractTableModel):
         self.apply_table_action(self.table.remove_row,items)
 
     def undo(self):
-        self.apply_table_action(self.table.undo,delta=-1)
+        self.apply_table_action(self.table.undo)
 
     def redo(self):
         self.apply_table_action(self.table.redo)
@@ -404,13 +434,13 @@ class CTableView(QTableView):
         self.setModel(self.table_model)
 
         self.setMouseTracking(True)
-        
+
         self.horizontalHeader().setSectionsMovable(True)
         self.verticalHeader().setSectionsMovable(True)
 
         self.horizontalHeader().sectionMoved.connect(self.on_column_moved)
         self.verticalHeader().sectionMoved.connect(self.on_row_moved)
-        
+
         self.resizeColumnsToContents()
         self.resizeRowsToContents()
 
@@ -546,7 +576,7 @@ class CTableView(QTableView):
             if visual_index != logical_index:
                 header.moveSection(visual_index, logical_index)
         header.blockSignals(False)
-    
+
     def sizeHint(self):
         rows = min(self.table_model.rowCount(),15)
 
@@ -738,13 +768,13 @@ class CErrorTableView(QTableView):
 
         self.setSelectionMode(QTableView.SelectionMode.NoSelection)
         self.setEditTriggers(QTableView.EditTrigger.NoEditTriggers)
-        
+
         self.horizontalHeader().setSectionsMovable(False)
         self.verticalHeader().setSectionsMovable(False)
-        
+
         self.resizeColumnsToContents()
         self.resizeRowsToContents()
-        
+
         self.setHorizontalScrollBar(CScrollBar(self))
         self.setVerticalScrollBar(CScrollBar(self))
 
@@ -768,7 +798,7 @@ class CErrorTableView(QTableView):
 
         self.detail_window = DetailErrorWindow(self, data)
         self.detail_window.show()
-    
+
     def sizeHint(self):
         rows = min(self.table_model.rowCount(),15)
 
@@ -835,13 +865,13 @@ class CFrame(QFrame):
         self.click_debouncer.setSingleShot(True)
         self.click_debouncer.timeout.connect(self.on_click_debouncer_timeout)
 
-    def install_recursive_event_filter(self):
-        def _install_recursive_event_filter(widget):
+    def recursive_install_event_filter(self):
+        def _recursive_install_event_filter(widget):
             widget.installEventFilter(self)
             for child in widget.children():
                 if isinstance(child, QWidget):
-                    _install_recursive_event_filter(child)
-        _install_recursive_event_filter(self)
+                    _recursive_install_event_filter(child)
+        _recursive_install_event_filter(self)
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.Type.MouseButtonPress:

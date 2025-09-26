@@ -2,15 +2,19 @@ from collections import deque
 import json
 import os
 
-class SetEncoder(json.JSONEncoder):
+class CustomEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, Cacher.WrappedSet):
             return {"__set__": list(obj)}
+        if isinstance(obj, tuple):
+            return {"__tuple__": list(obj)}
         return super().default(obj)
 
-def set_decoder(obj):
+def custom_decoder(obj):
     if "__set__" in obj:
         return set(obj["__set__"])
+    if "__tuple__" in obj:
+        return tuple(obj["__tuple__"])
     return obj
 
 class Cacher(dict):
@@ -21,9 +25,11 @@ class Cacher(dict):
             self.read = reader
         else:
             def defaultReader():
-                with open(self.file_path, 'r') as f:
-                    data = f.read()
-                return data
+                if self.file_path and os.path.isfile(self.file_path):
+                    with open(self.file_path, 'r', encoding='utf-8') as f:
+                        data = f.read()
+                    return data
+                return '{}'
             self.read = defaultReader
 
 
@@ -32,17 +38,18 @@ class Cacher(dict):
         else:
             def defaultWriter(file_path,serialization):
                 os.makedirs(os.path.dirname(file_path), exist_ok=True)
-                with open(file_path, 'w') as f:
-                    json.dump(self, f, indent=2, cls= SetEncoder)
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(self, f, indent=2, cls= CustomEncoder)
             self.write = defaultWriter
 
 
-        data={}
-        if os.path.isfile(self.file_path):
-            data = self.wrap_item(json.loads(self.read(), object_hook=set_decoder))
+        data = self.wrap_item(json.loads(self.read(), object_hook=custom_decoder))
 
         super().__init__(data)
         self.__dict__.update(attributes)
+
+        self.write_enable = True
+        self.modified = False
 
     def wrap_item(self, v):
         if isinstance(v, dict):
@@ -68,7 +75,19 @@ class Cacher(dict):
         return {sk:self.unwrap_item(sv) for sk,sv in self.items()}
 
     def save(self):
-        self.write(self.file_path,json.dumps(self, cls=SetEncoder))
+        if self.write_enable:
+            self.write(self.file_path,json.dumps(self, indent=2, cls=CustomEncoder))
+        else:
+            self.modified = True
+
+    def disable_sync(self):
+        self.write_enable = False
+
+    def enable_sync(self):
+        self.write_enable = True
+        if self.modified:
+            self.save()
+            self.modified = False
 
     def __getitem__(self, k):
         if not k in self.keys():
@@ -214,7 +233,9 @@ class Cacher(dict):
             self.parent.save()
 
         def __getitem__(self, k):
-            return self.setdefault(k, Cacher.WrappedDict(self,{}))
+            if not k in self.keys():
+                self[k] = Cacher.WrappedDict(self,{})
+            return super().__getitem__(k)
 
         def __setitem__(self, k, v):
             super().__setitem__(k, self.wrap_item(v))

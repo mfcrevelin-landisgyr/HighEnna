@@ -1,5 +1,5 @@
 #define MyAppName "HighEnna"
-#define MyAppVersion "1.3.0"
+#define MyAppVersion "2.0.0"
 #define MyAppPublisher "Landis+Gyr, Inc."
 #define MyAppExeName "HighEnna.exe"
 
@@ -15,10 +15,11 @@ ArchitecturesInstallIn64BitMode=x64compatible
 DisableProgramGroupPage=yes
 ; LicenseFile=..\LICENSE.txt
 ; Uncomment the following line to run in non administrative install mode (install for current user only.)
-;PrivilegesRequired=lowest
+PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
+OutputDir=..\output
 OutputBaseFilename={#MyAppName}_{#MyAppVersion}_windows_setup
-SetupIconFile=.\Windows setup.ico
+SetupIconFile=.\assets\Windows setup.ico
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
@@ -30,8 +31,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "..\HighEnna-Graphical\build\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\HighEnna-Graphical\build\assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\HighEnna-Graphical\build\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\HighEnna-Graphical\build\dist\assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

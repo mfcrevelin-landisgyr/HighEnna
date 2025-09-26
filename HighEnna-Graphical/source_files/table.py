@@ -9,9 +9,8 @@ class Table:
         self.redo_stack = deque()
 
         self.allow_empty = allow_empty
-
         self.default_text = default_text
-
+        self.delta_to_saved_version = 0
         self.siblings = []
 
     def __len__(self):
@@ -27,6 +26,9 @@ class Table:
     def _record_undo(self, action, data):
         self.undo_stack.append((action, data))
         self.redo_stack.clear()
+        if not action == "null":
+            self.delta_to_saved_version+=1
+
 
     def undo(self):
         self._undo()
@@ -40,6 +42,7 @@ class Table:
         self.redo_stack.append((action, data))
         if not action == "null":
             self._perform_undo(action, data)
+            self.delta_to_saved_version-=1
 
     def redo(self):
         self._redo()
@@ -53,6 +56,7 @@ class Table:
         self.undo_stack.append((action, data))
         if not action == "null":
             self._perform_redo(action, data)
+            self.delta_to_saved_version+=1
 
     def _perform_redo(self, action, data):
         getattr(self, f"_{action}")(data, False)
@@ -145,7 +149,7 @@ class Table:
 
             bellow_indexes = [item for item in items if item[0]<=length]
             items = items[len(bellow_indexes):]
-        
+
 
         if items:
             items = sorted(items, key=lambda x: x[0])
