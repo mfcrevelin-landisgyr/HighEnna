@@ -1,10 +1,9 @@
-from collections import deque
 import json
 import os
 
 class CustomEncoder(json.JSONEncoder):
     def default(self, obj):
-        if isinstance(obj, Cacher.WrappedSet):
+        if isinstance(obj, (Cacher.WrappedSet,set)):
             return {"__set__": list(obj)}
         if isinstance(obj, tuple):
             return {"__tuple__": list(obj)}

@@ -1,11 +1,49 @@
-from PyQt6.QtWidgets import *
-from PyQt6.QtCore import *
-from PyQt6.QtGui import *
+from PyQt6.QtWidgets import (
+    QLabel, QScrollBar, QScrollArea, QTabBar, QTabWidget, QCheckBox, QWidget,
+    QHBoxLayout, QTableWidget, QTableWidgetItem, QAbstractItemView, QHeaderView,
+    QSizePolicy, QStyledItemDelegate, QTableView, QVBoxLayout, QFrame, QProgressBar,
+    QApplication, QDialog, QLineEdit
+)
+from PyQt6.QtCore import (
+    Qt, QTimer, QSize, QEvent, pyqtSignal, QVariant, QModelIndex, QAbstractTableModel,
+    QRectF,QPoint
+)
+from PyQt6.QtGui import (
+    QFont, QFontMetrics, QPalette, QColor, 
+    QGuiApplication, QWheelEvent, QKeyEvent, 
+    QClipboard, QMouseEvent, QResizeEvent,
+    QPainter, QBrush
+)
 
 from collections import defaultdict
 from io import StringIO
 import csv
 import re
+
+class FileNameDialog(QDialog):
+    nameAccepted = pyqtSignal(str)
+
+    def __init__(self, parent, start_text = None):
+        super().__init__(parent)
+
+        self.setWindowTitle("Enter File Name")
+
+        # Line edit
+        self.line_edit = QLineEdit(self)
+        self.line_edit.setPlaceholderText("File name")
+        if start_text:
+            self.line_edit.setText(start_text)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.line_edit)
+
+        # Connect enter/return key
+        self.line_edit.returnPressed.connect(self._on_return_pressed)
+
+    def _on_return_pressed(self):
+        text = self.line_edit.text()
+        self.nameAccepted.emit(text)
+        self.accept()
 
 class CFooter(QLabel):
     _instances = set()  # keep track of all instances
@@ -14,7 +52,7 @@ class CFooter(QLabel):
         super().__init__(*args, **kwargs)
         CFooter._instances.add(self)
 
-        self.setFont(QFont("Courier New"))
+        self.setFont(QFont("Liberation Mono"))
 
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
@@ -51,6 +89,43 @@ class CFooter(QLabel):
             footer._timer.stop()
             if time > 0:
                 footer._timer.start(time)
+
+class CProgressBar(QProgressBar):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setTextVisible(True)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        rect = self.rect()
+        radius = rect.height() // 3
+
+        pal = self.palette()
+        bg_color = pal.color(pal.ColorRole.Base)
+        chunk_color = pal.color(pal.ColorRole.Highlight)
+        text_color = pal.color(pal.ColorRole.Text)
+
+        painter.setBrush(bg_color)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRoundedRect(rect,radius,radius)
+
+        progress_ratio = (self.value() - self.minimum()) / max(1, (self.maximum() - self.minimum()))
+        progress_width = rect.width() * progress_ratio
+
+        painter.setBrush(chunk_color)
+        progress_rect = QRectF(rect.left(), rect.top(), progress_width, rect.height())
+        painter.drawRoundedRect(progress_rect,radius,radius)
+
+        painter.setPen(text_color)
+        font = painter.font()
+        font.setBold(True)
+        font.setPointSize(rect.height() // 2)
+        painter.setFont(font)
+
+        text = self.text()
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
 
 class CScrollBar(QScrollBar):
     def __init__(self,parent_widget=None):
@@ -169,7 +244,7 @@ class CTableWidget(QTableWidget):
         self.assignee_map = {i:a for i,a in enumerate(sorted(self.parent_window.assignees,key=lambda uuid: self.project.uuid_to_name[uuid]))}
         self.assignee_map.update({a:i for i,a in self.assignee_map.items()})
 
-        font = QFont("Courier New")
+        font = QFont("Liberation Mono")
 
         for receiver in self.parent_window.receivers:
             item = QTableWidgetItem(receiver)
@@ -291,7 +366,7 @@ class CTableWidget(QTableWidget):
 class CStyledItemDelegate(QStyledItemDelegate):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.courier_new_font = QFont("Courier New")
+        self.courier_new_font = QFont("Liberation Mono")
 
     def createEditor(self, parent, option, index):
         editor = super().createEditor(parent, option, index)
@@ -310,7 +385,7 @@ class CTableModel(QAbstractTableModel):
 
         self.table = data_table
 
-        self.courier_new_font = QFont("Courier New")
+        self.courier_new_font = QFont("Liberation Mono")
 
         self.siblings = [self]
 
@@ -640,7 +715,7 @@ class CErrorTableModel(QAbstractTableModel):
         self.__dict__.update(self.dictionary)
 
         self.table = data_table
-        self.courier_new_font = QFont("Courier New")
+        self.courier_new_font = QFont("Liberation Mono")
 
     def rowCount(self, parent=QModelIndex()):
         return len(self.table.data)
@@ -695,7 +770,7 @@ class DetailErrorWindow(QWidget):
         content = QWidget()
         layout = QVBoxLayout(content)
 
-        mono_font = QFont("Courier New")
+        mono_font = QFont("Liberation Mono")
         bold_font = QFont()
         bold_font.setBold(True)
 
@@ -854,7 +929,6 @@ class CErrorTableView(QTableView):
             scrollbar.setValue(new_value)
             event.accept()
 
-from time import time
 class CFrame(QFrame):
     clicked = pyqtSignal()
 

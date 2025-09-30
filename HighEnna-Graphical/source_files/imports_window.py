@@ -1,8 +1,11 @@
-from PyQt6.QtWidgets import *
-from PyQt6.QtCore import *
-from PyQt6.QtGui import *
+from PyQt6.QtWidgets import (
+    QDialog,QVBoxLayout,QHBoxLayout,
+    QPushButton,QWidget,QApplication
+)
+from PyQt6.QtCore import pyqtSignal, QEvent
+from PyQt6.QtGui import QCursor, QKeySequence, QShortcut
 
-from custom_qt import *
+from custom_qt import CTableWidget
 
 
 class ImportsWindow(QDialog):
@@ -36,6 +39,10 @@ class ImportsWindow(QDialog):
         hbox.addWidget(apply_btn)
         layout.addLayout(hbox)
 
+        QShortcut(QKeySequence("Ctrl+S"), self, self.on_apply)
+        QShortcut(QKeySequence("Return"), self, self.on_apply)
+        QShortcut(QKeySequence("Enter"), self, self.on_apply)
+
         self.setLayout(layout)
 
         self.update(True)
@@ -49,7 +56,7 @@ class ImportsWindow(QDialog):
             CFooter.broadcast("Project has no template files.", 1500)
             self.close()
 
-        assignees = project.project_cache["modules"]['modules_set']
+        assignees = project.project_cache["modules"]['modules_set'].copy()
         if not assignees:
             CFooter.broadcast("Project has no module files.", 1500)
             self.close()
@@ -60,7 +67,7 @@ class ImportsWindow(QDialog):
             self.relations = parent_relations.copy()
 
         else:
-            new_assignees = set(assignees) - set(self.assignees)
+            new_assignees = assignees - self.assignees
             self.relations = {
                     k: (self.relations.get(k, parent_relations.get(k, set()).copy()) | new_assignees)
                     for k in receivers
@@ -80,15 +87,12 @@ class ImportsWindow(QDialog):
 
     def on_apply(self):
         relations = {}
-        for row, receiver in enumerate(self.receivers):
-            assigned = set()
-            for col, assignee in enumerate(self.assignees):
-                checkbox_widget = self.table.cellWidget(row, col)
-                checkbox = checkbox_widget.layout().itemAt(0).widget()
-                if checkbox.isChecked():
-                    assigned.add(assignee)
-            relations[receiver] = assigned
-        self.applied.emit(self.relations)
+        project = self.parent().project
+        for receiver, assignees in self.relations.items():
+            if receiver not in project.tpy_files.keys():
+                continue
+            relations[receiver] = assignees & project.project_cache["modules"]['modules_set']
+        self.applied.emit(relations)
         self.close()
 
     def recursive_install_event_filter(self):
@@ -120,8 +124,8 @@ class ImportsWindow(QDialog):
             self.table.resizeRowsToContents()
         content_size = self.sizeHint()
 
-        new_width = min(content_size.width(), max_width)
-        new_height = min(content_size.height(), max_height)
+        new_width = min(content_size.width()+15, max_width)
+        new_height = min(content_size.height()+15, max_height)
 
         new_x = available_geometry.x() + (screen_width - new_width) // 2
         new_y = available_geometry.y() + (screen_height - new_height) // 2

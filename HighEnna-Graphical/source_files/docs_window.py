@@ -1,7 +1,6 @@
-from PyQt6.QtWidgets import *
-from PyQt6.QtCore import *
-from PyQt6.QtGui import *
-
+from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QSpacerItem, QSizePolicy, QApplication
+from PyQt6.QtCore import QUrl
+from PyQt6.QtGui import QCursor
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 import sys

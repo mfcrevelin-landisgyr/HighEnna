@@ -5,8 +5,8 @@ class Table:
         self.column_names = []
         self.data = [] if allow_empty else [[]]
 
-        self.undo_stack = deque()
-        self.redo_stack = deque()
+        self.undo_stack = []
+        self.redo_stack = []
 
         self.allow_empty = allow_empty
         self.default_text = default_text

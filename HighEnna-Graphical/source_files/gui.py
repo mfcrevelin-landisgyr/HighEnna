@@ -1,11 +1,15 @@
-from PyQt6.QtWidgets import *
-from PyQt6.QtCore import *
-from PyQt6.QtGui import *
+from PyQt6.QtWidgets import (
+    QMainWindow, QWidget, QVBoxLayout, QFileDialog, QMessageBox,
+    QMenu, QApplication
+)
+from PyQt6.QtCore import Qt, QTimer, QFileSystemWatcher, QEvent, QThread, pyqtSignal
+from PyQt6.QtGui import QIcon, QKeySequence, QCursor, QKeyEvent, QAction
 
-from custom_qt import *
+from custom_qt import CScrollArea, CFooter
 from project import *
 
 from imports_window import ImportsWindow
+from render_window import RenderWindow
 from docs_window import DocsWindow
 from tpy_view import TpyView
 from cacher import Cacher
@@ -26,6 +30,21 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 APPLICATION_NAME = "High Enna"
+
+class UpdateWorker(QThread):
+    tpy_changed = pyqtSignal()
+    module_changed = pyqtSignal()
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.parent = parent
+
+    def run(self):
+        tpy_changed_b, module_change_b = self.parent.project.update()
+        if tpy_changed_b:
+            self.tpy_changed.emit()
+        if module_change_b:
+            self.module_changed.emit()
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -52,6 +71,7 @@ class MainWindow(QMainWindow):
         self.active_tpy_view=None
 
         self.imports_window = None
+        self.render_window = None
         self.docs_window = None
 
         self.init_ui()
@@ -61,13 +81,6 @@ class MainWindow(QMainWindow):
             self.open_project(current_project_path)
 
         self.adjust_size()
-
-
-        # _timer = QTimer(self)
-        # _timer.setSingleShot(True)
-        # _timer.timeout.connect(self.imports_slot)
-        # _timer.start(500)
-
 
 
     def init_ui(self):
@@ -103,6 +116,7 @@ class MainWindow(QMainWindow):
             "File": [
                 {"option": "Open Containing Folder   ", "keybinding": "Ctrl+Shift+O", "slot": self.open_containing_folder_slot},
                 {"option": "Open Project", "keybinding": "Ctrl+O", "slot": self.open_project_slot},
+                {"option": "New Module", "keybinding": "Ctrl+M", "slot": self.new_module_slot},
                 {"option": "New File", "keybinding": "Ctrl+N", "slot": self.new_file_slot},
                 None,
                 {"option": "Save All", "keybinding": "Ctrl+Shift+S", "slot": self.save_all_slot},
@@ -159,11 +173,14 @@ class MainWindow(QMainWindow):
         self.watch_debouncer.start(50)
 
     def on_watch_debouncer_timeout(self):
-        tpy_changed, module_change = self.project.update()
-        if tpy_changed:
-            self.populate()
-        if module_change and self.imports_window:
-            self.imports_window.update()
+        worker = UpdateWorker(self)
+
+        worker.tpy_changed.connect(self.populate)
+        worker.module_changed.connect(lambda: self.imports_window.update() if self.imports_window else None)
+
+        worker.finished.connect(worker.deleteLater)
+
+        worker.start()
 
 #--- Menu Bar Slots --- #
 
@@ -194,7 +211,7 @@ class MainWindow(QMainWindow):
     def new_file_slot(self):
         current_project_path = self.project.project_path
         if not current_project_path:
-            CFooter.broadcast("There is no project open.")
+            CFooter.broadcast("There is no project open.", 1500)
             return
 
         file_path, _ = QFileDialog.getSaveFileName(
@@ -212,45 +229,47 @@ class MainWindow(QMainWindow):
             file_path += ".tpy"
 
         if os.path.exists(file_path):
-            CFooter.broadcast("File Exists", f"The file '{os.path.basename(file_path)}' already exists.")
+            CFooter.broadcast(f"The file '{os.path.basename(file_path)}' already exists.",2500)
             return
 
         try:
             with open(file_path, 'w', encoding='utf-8') as f:
-                pass
+                f.write('')
+            os.system(f'start "" "{file_path}"')
         except Exception as e:
-            CFooter.broadcast("Error", f"Failed to create file:\n{e}")
+            CFooter.broadcast(f"Failed to create file:\n{e}",2500)
             return
 
     def new_module_slot(self):
         current_modules_path = self.project.modules_path
         if not current_modules_path:
-            CFooter.broadcast("There is no project open.")
+            CFooter.broadcast("There is no project open.",1500)
             return
 
         file_path, _ = QFileDialog.getSaveFileName(
                 self,
                 "Create New File",
                 current_modules_path,
-                "TPY Files (*.tpy)",
+                "PY Files (*.py)",
                 options=QFileDialog.Option.DontConfirmOverwrite
             )
 
         if not file_path:
             return
 
-        if not file_path.endswith(".tpy"):
-            file_path += ".tpy"
+        if not file_path.endswith(".py"):
+            file_path += ".py"
 
         if os.path.exists(file_path):
-            CFooter.broadcast("File Exists", f"The file '{os.path.basename(file_path)}' already exists.")
+            CFooter.broadcast(f"The file '{os.path.basename(file_path)}' already exists.",2500)
             return
 
         try:
             with open(file_path, 'w', encoding='utf-8') as f:
-                pass
+                f.write('')
+            os.system(f'start "" "{file_path}"')
         except Exception as e:
-            CFooter.broadcast("Error", f"Failed to create file:\n{e}")
+            CFooter.broadcast(f"Failed to create module file:\n{e}", 2500)
             return
 
     def save_all_slot(self):
@@ -267,10 +286,39 @@ class MainWindow(QMainWindow):
             CFooter.broadcast("No script selected.", 1500)
 
     def render_all_slot(self):
-        CFooter.broadcast("render_all_slot")
+        if not self.render_window:
+            def render_window_on_finished():
+                self.render_window.deleteLater()
+                self.render_window = None
+            items = {tpy_file:list(range(len(self.project.tpy_files[tpy_file].scripts_table))) for tpy_file in self.project.tpy_files.keys()}
+            self.render_window = RenderWindow(self,items)
+            self.render_window.finished.connect(render_window_on_finished)
+            self.render_window.show()
+        else:
+            CFooter.broadcast("Rendering already in progress.", 2500)
 
     def render_slot(self):
-        CFooter.broadcast("render_slot")
+        active_tpy_entry = self.project.project_cache['active_tpy_entry']
+        if active_tpy_entry:
+            if not self.render_window:
+                tpy_file = self.project.tpy_files[active_tpy_entry]
+
+                if tpy_file.has_syntax_errors():
+                    CFooter.broadcast(f"{active_tpy_entry} contains syntax Errors. Cannot render.", 2500)
+                    return
+
+                def render_window_on_finished():
+                    self.render_window.deleteLater()
+                    self.render_window = None
+
+                items = {active_tpy_entry:list(range(len(tpy_file.scripts_table)))}
+                self.render_window = RenderWindow(self,items)
+                self.render_window.finished.connect(render_window_on_finished)
+                self.render_window.show()
+            else:
+                CFooter.broadcast("Rendering already in progress.", 2500)
+        else:
+            CFooter.broadcast("No script selected.", 1500)
 
     def close_slot(self):
         if self.application_cache['main_window']['current_project_path']:
@@ -280,20 +328,24 @@ class MainWindow(QMainWindow):
             self.close()
 
     def prefereces_slot(self):
-        CFooter.broadcast("prefereces_slot")
+        CFooter.broadcast("prefereces_slot", 1500)
 
     def imports_slot(self):
         if self.project.is_open:
 
-            def apply_assignment(result):
-                self.project.project_cache["modules"]['module_assignments'] = result
+            def imports_window_on_finished():
+                self.imports_window.deleteLater()
                 self.imports_window = None
+
+            def imports_window_on_applied(result):
+                self.project.project_cache["modules"]['module_assignments'] = result
 
                 for tpy_file in self.project.tpy_files.values():
                     tpy_file.update_modules()
 
             self.imports_window = ImportsWindow(self)
-            self.imports_window.applied.connect(apply_assignment)
+            self.imports_window.finished.connect(imports_window_on_finished)
+            self.imports_window.applied.connect(imports_window_on_applied)
             self.imports_window.show()
 
         else:
@@ -306,19 +358,19 @@ class MainWindow(QMainWindow):
             self.docs_window.show()
 
     def about_slot(self):
-        CFooter.broadcast("about_slot")
+        CFooter.broadcast("about_slot", 1500)
 
     def colapse_all_slot(self):
         self.project.project_cache['active_tpy_entry'] = None
         for tpy_view in self.tpy_views.values():
             if not tpy_view.project_cache["is_closed"]:
-                tpy_view.on_title_label_left_clicked()
+                tpy_view.on_title_label_left_clicked(True)
 
     def expand_all_slot(self):
         self.project.project_cache['active_tpy_entry'] = None
         for tpy_view in self.tpy_views.values():
             if tpy_view.project_cache["is_closed"]:
-                tpy_view.on_title_label_left_clicked()
+                tpy_view.on_title_label_left_clicked(True)
 
 #--- Main Window Utils --- #
 
@@ -404,7 +456,7 @@ class MainWindow(QMainWindow):
         return mods, key
 
     def adjust_size(self):
-        numer, denom = 6,7
+        numer, denom = 5,7
 
         cursor_pos = QCursor.pos()
         screen = QApplication.screenAt(cursor_pos)
