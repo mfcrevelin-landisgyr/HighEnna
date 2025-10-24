@@ -9,8 +9,7 @@
 
 #include <cstdint>
 #include <string>
-#include <vector>
-#include <stack>
+#include <deque>
 
 namespace py = pybind11;
 

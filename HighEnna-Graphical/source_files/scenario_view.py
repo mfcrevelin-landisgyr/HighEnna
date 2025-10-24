@@ -6,7 +6,7 @@ from PyQt6.QtGui import QFont
 
 from custom_qt import (
         CFrame, CLabel, CTabWidget, 
-        CTableView, CErrorTableView
+        CTableView,  CErrorTableView
     )
 
 from render_window import RenderWindow
@@ -15,19 +15,19 @@ from custom_qt import CFooter, FileNameDialog
 import re
 import os
 
-class TpyView:
-    def __init__(self,tpy_file,dictionary):
-        self.dictionary = {'tpy_view':self}
+class ScenarioView:
+    def __init__(self,scenario_file,dictionary):
+        self.dictionary = {'scenario_view':self}
         self.dictionary.update(dictionary)
         self.__dict__.update(self.dictionary)
 
-        self.project_cache = self.project.project_cache['tpyview'][tpy_file.tpy_file_name]
+        self.project_cache = self.project.project_cache['scenarioview'][scenario_file.scenario_name]
         self.project_cache.setdefault("is_closed",True)
         self.project_cache.setdefault("active_tab",None)
 
-        self.tpy_file = tpy_file
+        self.scenario_file = scenario_file
 
-        self.frame = CFrame()
+        self.frame = CFrame(self.main_window.scroll_area_widget)
         self.frame.setFrameShape(QFrame.Shape.StyledPanel)
         self.frame.clicked.connect(self.on_frame_clicked)
         self.vbox_layout = QVBoxLayout(self.frame)
@@ -37,8 +37,8 @@ class TpyView:
     # ---- Slots ----
 
     def on_frame_clicked(self): 
-        active_key = self.project.project_cache['active_tpy_entry']
-        is_active = active_key == self.tpy_file.tpy_file_name
+        active_key = self.project.project_cache['active_scenario_entry']
+        is_active = active_key == self.scenario_file.scenario_name
         is_closed = self.project_cache['is_closed']
 
         if any([
@@ -47,7 +47,7 @@ class TpyView:
             ]):
             return
 
-        def update_menu(state):
+        def update_menu_bar(state):
             self.main_window.menu_widgets['File']['Save'].setEnabled(state)
             self.main_window.menu_widgets['File']['Render'].setEnabled(state)
 
@@ -57,53 +57,60 @@ class TpyView:
             font.setBold(False)
             self.title_label.setFont(font)
 
-            for key in sorted([key for key in self.main_window.tpy_views.keys() if key > self.tpy_file.tpy_file_name]):
-                view = self.main_window.tpy_views[key]
+            for key in sorted([key for key in self.main_window.scenario_views.keys() if key > self.scenario_file.scenario_name]):
+                view = self.main_window.scenario_views[key]
                 if not view.project_cache['is_closed']:
                     font = view.title_label.font()
                     font.setBold(True)
                     view.title_label.setFont(font)
-                    self.project.project_cache['active_tpy_entry'] = key
-                    update_menu(True)
+                    self.project.project_cache['active_scenario_entry'] = key
+                    update_menu_bar(True)
                     return
 
-            for key in sorted([key for key in self.main_window.tpy_views.keys() if key < self.tpy_file.tpy_file_name]):
-                view = self.main_window.tpy_views[key]
+            for key in sorted([key for key in self.main_window.scenario_views.keys() if key < self.scenario_file.scenario_name]):
+                view = self.main_window.scenario_views[key]
                 if not view.project_cache['is_closed']:
                     font = view.title_label.font()
                     font.setBold(True)
                     view.title_label.setFont(font)
-                    self.project.project_cache['active_tpy_entry'] = key
-                    update_menu(True)
+                    self.project.project_cache['active_scenario_entry'] = key
+                    update_menu_bar(True)
                     return
 
-            self.project.project_cache['active_tpy_entry'] = None
-            update_menu(False)
+            self.project.project_cache['active_scenario_entry'] = None
+            update_menu_bar(False)
 
         else:
 
-            if active_key in self.main_window.tpy_views:
-                active_tpy_entry = self.main_window.tpy_views[active_key]
-                font = active_tpy_entry.title_label.font()
+            if active_key in self.main_window.scenario_views:
+                active_scenario_entry = self.main_window.scenario_views[active_key]
+                font = active_scenario_entry.title_label.font()
                 font.setBold(False)
-                active_tpy_entry.title_label.setFont(font)
+                active_scenario_entry.title_label.setFont(font)
 
             font = self.title_label.font()
             font.setBold(True)
             self.title_label.setFont(font)
 
-            self.project.project_cache['active_tpy_entry'] = self.tpy_file.tpy_file_name
-            update_menu(True)
+            self.project.project_cache['active_scenario_entry'] = self.scenario_file.scenario_name
+            update_menu_bar(True)
 
     def on_title_label_left_clicked(self,ignore_footer=False):
+        active_key = self.project.project_cache['active_scenario_entry']
+        is_active = active_key == self.scenario_file.scenario_name
+
+        if not is_active:
+            self.on_frame_clicked()
+            return
+
         if any([
-                bool(self.tpy_file.vars_table),
-                bool(self.tpy_file.vals_table),
-                bool(self.tpy_file.errors_table.data),
+                bool(self.scenario_file.vars_table),
+                bool(self.scenario_file.vals_table),
+                bool(self.scenario_file.errors_table.data),
             ]):
 
-            active_key = self.project.project_cache['active_tpy_entry']
-            is_active = (active_key == self.tpy_file.tpy_file_name)
+            active_key = self.project.project_cache['active_scenario_entry']
+            is_active = (active_key == self.scenario_file.scenario_name)
             is_closed = self.project_cache['is_closed']
 
             if is_closed:
@@ -115,59 +122,26 @@ class TpyView:
             
             self.on_frame_clicked()
         elif not ignore_footer:
-            CFooter.broadcast("Nothing to edit on {script}.".format(script=re.sub(r'\.\w+$','',self.tpy_file.tpy_file_name)), 1500)
+            CFooter.broadcast("Nothing to edit on {script}.".format(script=self.scenario_file.scenario_name), 1500)
 
     def on_title_label_right_clicked(self):
         menu = QMenu(self.main_window)
 
         open_action = menu.addAction("Open" if self.project_cache["is_closed"] else "Close")
-        edit_action = menu.addAction("Edit")
-        rename_action = menu.addAction("Rename")
-        delete_action = menu.addAction("Delete")
+        menu.addSeparator()
+        edit_action = menu.addAction("Code")
+        render_action = menu.addAction("Render")
 
         action = menu.exec(self.main_window.cursor().pos())
 
         if action == open_action:
             self.on_title_label_left_clicked()
 
-        elif action == rename_action:
-            win = FileNameDialog(self.main_window, self.tpy_file.tpy_file_name)
+        elif action == edit_action:
+            self.on_edit_button_clicked()
 
-            def after_accept(name: str):
-                old_path = self.tpy_file.tpy_file_path
-                dir_path = os.path.dirname(old_path)
-                new_path = os.path.join(dir_path, name)
-
-                tpy_file = self.project.tpy_files.pop(self.tpy_file.tpy_file_name)
-
-                tpy_file.tpy_file_name = name
-                tpy_file.tpy_file_path = new_path
-
-                old_default_script_name = tpy_file.default_script_name
-                
-                p = r'((?:\d+\.)+\d+)'
-                if re.search(p,tpy_file.tpy_file_name):
-                    tpy_file.default_script_name = re.sub(p,r'\1.{script_index}',tpy_file.tpy_file_name)
-                else:
-                    tpy_file.default_script_name = re.sub(r'(\.\w+$)', r'.{script_index}\1', tpy_file.tpy_file_name)
-
-                tpy_file.default_script_name = tpy_file.default_script_name.replace('.tpy','.py')
-                tpy_file.scripts_table = Table(default_text=tpy_file.default_script_name)
-
-
-                self.project.tpy_files[name] = tpy_file
-
-
-                # Rename via Windows shell command
-                os.system(f'rename "{old_path}" "{name}"')
-                tpy_file.mod_time = os.path.getmtime(tpy_file.tpy_file_path)
-
-            win.nameAccepted.connect(after_accept)
-            win.finished.connect(win.deleteLater)
-            win.show()
-
-        elif action == delete_action:
-            print("Delete chosen")
+        elif action == render_action:
+            self.on_render_button_clicked()
 
     def on_render_button_clicked(self,items=None):
         if not self.main_window.render_window:
@@ -175,7 +149,7 @@ class TpyView:
                 self.main_window.render_window.deleteLater()
                 self.main_window.render_window = None
             if not items:
-                items = {self.tpy_file.tpy_file_name:list(range(len(self.tpy_file.scripts_table)))}
+                items = {self.scenario_file.scenario_name:list(range(len(self.scenario_file.scripts_table)))}
             self.main_window.render_window = RenderWindow(self.main_window,items)
             self.main_window.render_window.finished.connect(render_window_on_finished)
             self.main_window.render_window.show()
@@ -183,10 +157,11 @@ class TpyView:
             CFooter.broadcast("Rendering already in progress.", 2500)
 
     def on_edit_button_clicked(self):
-        os.system(f'start "" "{self.tpy_file.tpy_file_path}"')
+        os.system(f'start "" "{self.scenario_file.scenario_path}"')
 
     def on_tab_widget_currentChanged(self, index):
         self.update_size_hint()
+        i = self.tab_widget.currentIndex()
         self.project_cache["active_tab"] = self.tab_widget.tabText(self.tab_widget.currentIndex())
 
     # ---- Methods ----
@@ -203,9 +178,9 @@ class TpyView:
 
         hbox_layout = QHBoxLayout()
 
-        self.title_label = CLabel()
-        self.title_label.setText(self.tpy_file.tpy_file_name)
-        if self.project.project_cache['active_tpy_entry'] == self.tpy_file.tpy_file_name:
+        self.title_label = CLabel(self.frame)
+        self.title_label.setText(self.scenario_file.scenario_name)
+        if self.project.project_cache['active_scenario_entry'] == self.scenario_file.scenario_name:
             font = self.title_label.font()
             font.setBold(True)
             self.title_label.setFont(font)
@@ -213,12 +188,12 @@ class TpyView:
         self.title_label.right_clicked.connect(self.on_title_label_right_clicked)
         hbox_layout.addWidget(self.title_label)
 
-        self.edit_button = QPushButton("Edit")
+        self.edit_button = QPushButton("Code",self.frame)
         self.edit_button.setFixedWidth(75)
         self.edit_button.clicked.connect(self.on_edit_button_clicked)
         hbox_layout.addWidget(self.edit_button)
 
-        self.render_button = QPushButton("Render")
+        self.render_button = QPushButton("Render",self.frame)
         self.render_button.setFixedWidth(75)
         self.render_button.clicked.connect(self.on_render_button_clicked)
         hbox_layout.addWidget(self.render_button)
@@ -229,30 +204,29 @@ class TpyView:
 
         self.tab_widget = CTabWidget(self.main_window)
         self.tab_widget.tabBar().setMovable(False)
-        self.tab_widget.currentChanged.connect(self.on_tab_widget_currentChanged)
 
         if any([
-                bool(self.tpy_file.vars_table),
-                bool(self.tpy_file.vals_table),
-                bool(self.tpy_file.errors_table.data),
+                bool(self.scenario_file.vars_table),
+                bool(self.scenario_file.vals_table),
+                bool(self.scenario_file.errors_table.data),
             ]):
 
             self.tab_widget.setHidden(self.project_cache["is_closed"])
 
-            if self.tpy_file.vars_table:
-                self.scripts_table_view = CTableView(self.dictionary, self.tpy_file.scripts_table)
+            if self.scenario_file.vars_table:
+                self.scripts_table_view = CTableView(self.tab_widget, self.dictionary, self.scenario_file.scripts_table)
                 self.scripts_table_view.resizeColumnsToContents()
                 self.scripts_table_view.resizeRowsToContents()
 
-                self.vars_table_view = CTableView(self.dictionary, self.tpy_file.vars_table)
+                self.vars_table_view = CTableView(self.tab_widget, self.dictionary, self.scenario_file.vars_table)
                 self.vars_table_view.resizeColumnsToContents()
                 self.vars_table_view.resizeRowsToContents()
 
                 self.vars_table_view.couple_sibling(self.scripts_table_view)
                 self.scripts_table_view.couple_sibling(self.vars_table_view)
 
-                def createContextMenu(text,remove_obsolete,table_view, position, index_at):
-                    menu = QMenu()
+                def createContextMenu(table_view, position, index_at):
+                    menu = QMenu(table_view)
 
                     selected_indices = table_view.selectedIndexes()
 
@@ -267,100 +241,91 @@ class TpyView:
 
                         menu.addSeparator()
 
-                        delete_action = menu.addAction(f"Delete {text}s")
-                        duplicate_action = menu.addAction(f"Duplicate {text}s")
+                        delete_action = menu.addAction(f"Delete Scripts")
+                        duplicate_action = menu.addAction(f"Duplicate Scripts")
 
-                        row_above_action = menu.addAction(f"Insert {text} Above Each")
-                        row_below_action = menu.addAction(f"Insert {text} Below Each")
+                        row_above_action = menu.addAction(f"Insert Script Above Each")
+                        row_below_action = menu.addAction(f"Insert Script Below Each")
                     else:
                         render_action = menu.addAction("Render Script")
 
                         menu.addSeparator()
 
-                        delete_action = menu.addAction(f"Delete {text}")
-                        duplicate_action = menu.addAction(f"Duplicate {text}")
+                        delete_action = menu.addAction(f"Delete Script")
+                        duplicate_action = menu.addAction(f"Duplicate Script")
 
-                        row_above_action = menu.addAction(f"Insert {text} Above")
-                        row_below_action = menu.addAction(f"Insert {text} Below")
+                        row_above_action = menu.addAction(f"Insert Script Above")
+                        row_below_action = menu.addAction(f"Insert Script Below")
 
-                    n_rows_action = menu.addAction(f"Add N {text}s")
-
-                    if remove_obsolete: menu.addSeparator()
-                    remove_obsolete_action = menu.addAction("Remove Obsolete Columns") if remove_obsolete else (None,None)
+                    n_rows_action = menu.addAction(f"Create N Scripts")
 
                     action = menu.exec(position)
 
                     if action == render_action:
-                        items = {self.tpy_file.tpy_file_name:[row[0] for row in rows]}
+                        items = {self.scenario_file.scenario_name:[row[0] for row in rows]}
                         self.on_render_button_clicked(items)
                     elif action == row_above_action:
-                        self.vars_table_view.table_model.insert_row(rows)
+                        table_view.table_model.insert_row(rows)
                     elif action == row_below_action:
                         rows = [(row+1,) for row,*_ in rows]
-                        self.vars_table_view.table_model.insert_row(rows)
+                        table_view.table_model.insert_row(rows)
                     elif action == n_rows_action:
                         num, ok = QInputDialog.getInt(table_view, "", "Number of rows:", 1, 1)
                         if ok:
                             length = table_view.table_model.rowCount()
                             self.vars_table_view.table_model.insert_row([(length+i,) for i in range(num)])
                     elif action == delete_action:
-                        self.vars_table_view.table_model.remove_row(rows)
+                        table_view.table_model.remove_row(rows)
                     elif action == duplicate_action:
-                        self.vars_table_view.table_model.duplicate_row(rows)
-                    elif action == remove_obsolete_action:
-                        self.vars_table_view.tpy_view.tpy_file.remove_obsolete()
+                        table_view.table_model.duplicate_row(rows)
+
+                    menu.deleteLater()
 
                     self.update_size_hint()
 
-                def createVarsContextMenu(table_view, position, index_at):
-                    createContextMenu("Row",True,table_view, position, index_at)
-                def createScriptsContextMenu(table_view, position, index_at):
-                    createContextMenu("Script",False,table_view, position, index_at)
-
-                self.vars_table_view.createContextMenu = createVarsContextMenu
-                self.scripts_table_view.createContextMenu = createScriptsContextMenu
+                self.vars_table_view.createContextMenu = createContextMenu
+                self.scripts_table_view.createContextMenu = createContextMenu
             else:
-                self.vars_table_view = QWidget()
-                self.scripts_table_view = QWidget()
+                self.vars_table_view = QWidget(self.tab_widget)
+                self.scripts_table_view = QWidget(self.tab_widget)
 
             self.tab_widget.addTab(self.scripts_table_view, "Names")
             self.tab_widget.setTabEnabled(self.tab_widget.indexOf(self.scripts_table_view),
-                                           bool(self.tpy_file.vars_table))
+                                           bool(self.scenario_file.vars_table))
 
             self.tab_widget.addTab(self.vars_table_view, "Variables")
             self.tab_widget.setTabEnabled(self.tab_widget.indexOf(self.vars_table_view),
-                                           bool(self.tpy_file.vars_table))
+                                           bool(self.scenario_file.vars_table))
 
 
 
-            if self.tpy_file.vals_table:
-                self.vals_table_view = CTableView(self.dictionary, self.tpy_file.vals_table)
+            if self.scenario_file.vals_table:
+                self.vals_table_view = CTableView(self.tab_widget, self.dictionary, self.scenario_file.vals_table)
                 self.vals_table_view.resizeColumnsToContents()
                 self.vals_table_view.resizeRowsToContents()
             else:
-                self.vals_table_view = QWidget()
+                self.vals_table_view = QWidget(self.tab_widget)
 
             self.tab_widget.addTab(self.vals_table_view, "Values")
             self.tab_widget.setTabEnabled(self.tab_widget.indexOf(self.vals_table_view),
-                                           bool(self.tpy_file.vals_table))
+                                           bool(self.scenario_file.vals_table))
 
 
-            if self.tpy_file.errors_table.data:
-                self.errors_table_view = CErrorTableView(self.dictionary, self.tpy_file.errors_table)
+            if self.scenario_file.errors_table.data:
+                self.errors_table_view = CErrorTableView(self.tab_widget, self.dictionary, self.scenario_file.errors_table)
                 self.errors_table_view.resizeColumnsToContents()
                 self.errors_table_view.resizeRowsToContents()
             else:
-                self.errors_table_view = QWidget()
+                self.errors_table_view = QWidget(self.tab_widget)
 
             self.tab_widget.addTab(self.errors_table_view, "Errors")
             self.tab_widget.setTabEnabled(self.tab_widget.indexOf(self.errors_table_view),
-                                           bool(self.tpy_file.errors_table.data))
+                                           bool(self.scenario_file.errors_table.data))
 
 
             self.vbox_layout.addWidget(self.tab_widget)
 
             # ---------------------------------------------------------------------------
-
             active_tab_name = self.project_cache["active_tab"]
             tab_set = False
 
@@ -387,5 +352,7 @@ class TpyView:
         else:
 
             self.tab_widget.setHidden(True)
+
+        self.tab_widget.currentChanged.connect(self.on_tab_widget_currentChanged)
 
         self.frame.recursive_install_event_filter()

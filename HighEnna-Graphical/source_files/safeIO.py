@@ -5,13 +5,13 @@ import os
 
 tempfiledir = tempfile.gettempdir()
 
-def safewrite(mode,file_path,content,tries=10):
+def safewrite(mode,file_path,content,tries=10,encoding='utf-8'):
     for _ in range(tries):
 
         if "b" in mode:
             tmp = tempfile.NamedTemporaryFile(mode, delete=False, dir=tempfiledir)
         else:
-            tmp = tempfile.NamedTemporaryFile(mode, delete=False, dir=tempfiledir, encoding="utf-8")
+            tmp = tempfile.NamedTemporaryFile(mode, delete=False, dir=tempfiledir)
 
         tmp_path = tmp.name
         with tmp:
@@ -31,7 +31,7 @@ def safewrite(mode,file_path,content,tries=10):
 def saferead(mode,file_path,tries=10):
     for _ in range(tries):
         try:
-            with open(file_path, mode, encoding='utf-8') as f:
+            with open(file_path, mode) as f:
                 return f.read()
         except (OSError, IOError) as e:
             if e.errno in (errno.ENOENT, errno.EACCES, errno.EIO):

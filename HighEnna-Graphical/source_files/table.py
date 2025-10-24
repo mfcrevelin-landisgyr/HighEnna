@@ -1,7 +1,7 @@
 from collections import deque
 
 class Table:
-    def __init__(self, default_text = '', allow_empty=False):
+    def __init__(self, name, allow_empty=False):
         self.column_names = []
         self.data = [] if allow_empty else [[]]
 
@@ -9,9 +9,12 @@ class Table:
         self.redo_stack = []
 
         self.allow_empty = allow_empty
-        self.default_text = default_text
+        self.default_text = ''
+        self.name = name
+
         self.delta_to_saved_version = 0
-        self.siblings = []
+
+        self.siblings = set()
 
     def __len__(self):
         return len(self.data)
@@ -19,7 +22,10 @@ class Table:
         return bool(self.column_names) and bool(self.data)
 
     def couple_sibling(self,table):
-        self.siblings.append(table)
+        self.siblings.add(table)
+
+    def set_default_text(self, default_text):
+        self.default_text = default_text
 
     # --- Undo/Redo ---
 
@@ -28,7 +34,6 @@ class Table:
         self.redo_stack.clear()
         if not action == "null":
             self.delta_to_saved_version+=1
-
 
     def undo(self):
         self._undo()
@@ -135,6 +140,7 @@ class Table:
     # --- Row Methods ---
 
     def insert_row(self, items):
+
         length = len(self.data)
         items_ = []
 

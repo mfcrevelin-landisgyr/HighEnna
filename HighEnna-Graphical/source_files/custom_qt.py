@@ -94,6 +94,7 @@ class CProgressBar(QProgressBar):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setTextVisible(True)
+        self.setFixedHeight(20)
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -121,7 +122,7 @@ class CProgressBar(QProgressBar):
         painter.setPen(text_color)
         font = painter.font()
         font.setBold(True)
-        font.setPointSize(rect.height() // 2)
+        font.setPointSize(rect.height()//2)
         painter.setFont(font)
 
         text = self.text()
@@ -136,8 +137,8 @@ class CScrollBar(QScrollBar):
         self.parent_widget.wheelEvent(event)
 
 class CScrollArea(QScrollArea):
-    def __init__(self):
-        super().__init__()
+    def __init__(self,parent):
+        super().__init__(parent)
         self.setHorizontalScrollBar(CScrollBar(self))
         self.setVerticalScrollBar(CScrollBar(self))
 
@@ -377,8 +378,8 @@ class CStyledItemDelegate(QStyledItemDelegate):
         return editor
 
 class CTableModel(QAbstractTableModel):
-    def __init__(self, dictionary,data_table):
-        super().__init__()
+    def __init__(self, parent, dictionary,data_table):
+        super().__init__(parent)
         self.dictionary = {'table_model':self}
         self.dictionary.update(dictionary)
         self.__dict__.update(self.dictionary)
@@ -498,14 +499,14 @@ class CTableModel(QAbstractTableModel):
 
 
 class CTableView(QTableView):
-    def __init__(self, dictionary, data_table):
-        super().__init__()
+    def __init__(self, parent, dictionary, data_table):
+        super().__init__(parent)
 
         self.dictionary = {'table_view':self}
         self.dictionary.update(dictionary)
         self.__dict__.update(self.dictionary)
 
-        self.table_model = CTableModel(self.dictionary, data_table)
+        self.table_model = CTableModel(self, self.dictionary, data_table)
         self.setModel(self.table_model)
 
         self.setMouseTracking(True)
@@ -540,12 +541,12 @@ class CTableView(QTableView):
         if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
             if event.key() == Qt.Key.Key_Z:
                 self.table_model.undo()
-                self.tpy_view.update_size_hint()
+                self.scenario_view.update_size_hint()
                 event.accept()
                 return
             elif event.key() == Qt.Key.Key_Y:
                 self.table_model.redo()
-                self.tpy_view.update_size_hint()
+                self.scenario_view.update_size_hint()
                 event.accept()
                 return
             elif event.key() == Qt.Key.Key_C:
@@ -708,8 +709,8 @@ class CTableView(QTableView):
             event.accept()
 
 class CErrorTableModel(QAbstractTableModel):
-    def __init__(self, dictionary, data_table):
-        super().__init__()
+    def __init__(self, parent, dictionary, data_table):
+        super().__init__(parent)
         self.dictionary = {'table_model': self}
         self.dictionary.update(dictionary)
         self.__dict__.update(self.dictionary)
@@ -827,8 +828,8 @@ class DetailErrorWindow(QWidget):
         self.setFixedSize(self.size())
 
 class CErrorTableView(QTableView):
-    def __init__(self, dictionary, data_table):
-        super().__init__()
+    def __init__(self, parent, dictionary, data_table):
+        super().__init__(parent)
 
         self.dictionary = {'table_view':self}
         self.dictionary.update(dictionary)
@@ -836,7 +837,7 @@ class CErrorTableView(QTableView):
 
         self.data_table = data_table
 
-        self.table_model = CErrorTableModel(self.dictionary,data_table)
+        self.table_model = CErrorTableModel(self,self.dictionary,data_table)
         self.setModel(self.table_model)
 
         self.setMouseTracking(True)

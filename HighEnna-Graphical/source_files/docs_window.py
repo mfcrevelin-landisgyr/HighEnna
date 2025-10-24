@@ -1,6 +1,6 @@
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QSpacerItem, QSizePolicy, QApplication
-from PyQt6.QtCore import QUrl
-from PyQt6.QtGui import QCursor
+from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QSpacerItem, QSizePolicy, QApplication
+from PyQt6.QtCore import QUrl, Qt, pyqtSignal
+from PyQt6.QtGui import QCursor, QIcon
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 import sys
@@ -18,12 +18,19 @@ def resource_path(relative_path):
 APPLICATION_NAME = "High Enna"
 
 
-class DocsWindow(QDialog):
+class DocsWindow(QMainWindow):
+    closed = pyqtSignal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("High Enna - Documentation")
 
-        main_layout = QVBoxLayout(self)
+        self.setWindowIcon(QIcon(resource_path("assets\\icons\\icon.png")))
+
+        self.main_widget = QWidget(self)
+        self.setCentralWidget(self.main_widget)
+
+        main_layout = QVBoxLayout(self.main_widget)
         main_layout.setContentsMargins(10, 10, 10, 10)
         main_layout.setSpacing(10)
 
@@ -32,7 +39,6 @@ class DocsWindow(QDialog):
 
         # Add a spacer to push buttons to the right
         spacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
-        nav_layout.addItem(spacer)
 
         # Buttons with UTF-8 symbols
         back_btn = QPushButton("\u25C0")    # ◀
@@ -40,11 +46,13 @@ class DocsWindow(QDialog):
         reload_btn = QPushButton("\u27F3")  # ⟳
         home_btn = QPushButton("\u2302")    # ⌂ (home symbol)
 
-        for btn in (home_btn, reload_btn, back_btn, forward_btn, ):
+        for btn in (home_btn, back_btn, forward_btn, reload_btn):
             font = btn.font()
             font.setPointSizeF(font.pointSizeF() * 1.5)  # scale by 1.5
             btn.setFont(font)
             nav_layout.addWidget(btn)
+
+        nav_layout.addItem(spacer)
 
         main_layout.addLayout(nav_layout)
 
@@ -61,6 +69,10 @@ class DocsWindow(QDialog):
         home_btn.clicked.connect(lambda: webview.setUrl(QUrl.fromLocalFile(index_file)))
 
         self.adjust_size()
+
+    def closeEvent(self, event):
+        self.closed.emit()
+        super().closeEvent(event)
 
     def adjust_size(self):
         numer, denom = 6, 7

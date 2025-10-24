@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import pyqtSignal, QEvent
 from PyQt6.QtGui import QCursor, QKeySequence, QShortcut
 
-from custom_qt import CTableWidget
+from custom_qt import CTableWidget, CFooter
 
 
 class ImportsWindow(QDialog):
@@ -14,7 +14,7 @@ class ImportsWindow(QDialog):
     def __init__(self, parent):
         super().__init__(parent)
 
-        self.setWindowTitle("Imports Assignment Editor")
+        self.setWindowTitle("Import Assignment Editor")
 
         self.receivers = []
         self.assignees = []
@@ -51,7 +51,7 @@ class ImportsWindow(QDialog):
     def update(self,is_start=False):
         project = self.parent().project
 
-        receivers = sorted(project.tpy_files.keys())
+        receivers = sorted(project.scenario_files.keys())
         if not receivers:
             CFooter.broadcast("Project has no template files.", 1500)
             self.close()
@@ -61,7 +61,7 @@ class ImportsWindow(QDialog):
             CFooter.broadcast("Project has no module files.", 1500)
             self.close()
 
-        parent_relations = self.parent().project.project_cache["modules"]['module_assignments']
+        parent_relations = project.project_cache["modules"]['module_assignments']
 
         if is_start:
             self.relations = parent_relations.copy()
@@ -89,7 +89,7 @@ class ImportsWindow(QDialog):
         relations = {}
         project = self.parent().project
         for receiver, assignees in self.relations.items():
-            if receiver not in project.tpy_files.keys():
+            if receiver not in project.scenario_files.keys():
                 continue
             relations[receiver] = assignees & project.project_cache["modules"]['modules_set']
         self.applied.emit(relations)

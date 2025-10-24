@@ -25,7 +25,7 @@ class RenderWorker(QThread):
         for file_name, items in self.queue.items():
             if self._stop_requested:
                 break
-            all_ok &= self.parent.project.tpy_files[file_name].render(
+            all_ok &= self.parent.project.scenario_files[file_name].render(
                     items,
                     self.append_text_signal,
                     self.progress_signal
@@ -59,6 +59,7 @@ class RenderWindow(QDialog):
 
         self.progress_bar = CProgressBar(self)
         self.progress_bar.setRange(0, self.total_steps)
+        self.progress_bar.setValue(0)
         self.progress_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.progress_bar.setFormat("%p%")
 
@@ -67,7 +68,7 @@ class RenderWindow(QDialog):
         layout.addWidget(self.progress_bar)
         self.setLayout(layout)
 
-        self.setWindowTitle("Rendering")
+        self.setWindowTitle("Rendering Monitor")
         self.adjust_size()
 
         self.worker = RenderWorker(parent, queue)
@@ -84,6 +85,7 @@ class RenderWindow(QDialog):
         self.current_step += n
         self.progress_bar.setValue(self.current_step)
         self.parent.populate()
+
 
     def handle_completion(self, all_ok: bool):
         pass

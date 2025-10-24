@@ -26,7 +26,7 @@ set "SRC=VS\Release\highennabackend.pyd"
 set "DST=..\HighEnna-Graphical\source_files\highennabackend.pyd"
 for /f "delims=" %%R in ('python -c "import os,sys;from pathlib import Path;src=Path(r'!SRC!');dst=Path(r'!DST!');print('True' if src.exists() and (not dst.exists() or src.stat().st_mtime > dst.stat().st_mtime) else 'False')"') do set "SHOULDRUN=%%R"
 if "!SHOULDRUN!"=="True" (
-    copy /Y "!SRC!" "!DST!" >nul
+    copy /Y "!SRC!" "!DST!"
 )
 
 endlocal
