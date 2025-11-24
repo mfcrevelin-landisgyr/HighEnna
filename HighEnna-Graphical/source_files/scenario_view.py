@@ -36,93 +36,55 @@ class ScenarioView:
 
     # ---- Slots ----
 
-    def on_frame_clicked(self): 
+    def on_frame_clicked(self):
         active_key = self.project.project_cache['active_scenario_entry']
         is_active = active_key == self.scenario_file.scenario_name
         is_closed = self.project_cache['is_closed']
 
-        if any([
-                not is_closed and is_active,
-                is_closed and not is_active
-            ]):
-            return
-
-        def update_menu_bar(state):
-            self.main_window.menu_widgets['File']['Save'].setEnabled(state)
-            self.main_window.menu_widgets['File']['Render'].setEnabled(state)
-
-        if is_closed:
-
-            font = self.title_label.font()
-            font.setBold(False)
-            self.title_label.setFont(font)
-
-            for key in sorted([key for key in self.main_window.scenario_views.keys() if key > self.scenario_file.scenario_name]):
-                view = self.main_window.scenario_views[key]
-                if not view.project_cache['is_closed']:
-                    font = view.title_label.font()
-                    font.setBold(True)
-                    view.title_label.setFont(font)
-                    self.project.project_cache['active_scenario_entry'] = key
-                    update_menu_bar(True)
-                    return
-
-            for key in sorted([key for key in self.main_window.scenario_views.keys() if key < self.scenario_file.scenario_name]):
-                view = self.main_window.scenario_views[key]
-                if not view.project_cache['is_closed']:
-                    font = view.title_label.font()
-                    font.setBold(True)
-                    view.title_label.setFont(font)
-                    self.project.project_cache['active_scenario_entry'] = key
-                    update_menu_bar(True)
-                    return
-
-            self.project.project_cache['active_scenario_entry'] = None
-            update_menu_bar(False)
-
-        else:
-
+        if not is_active:
+            def update_menu_bar(state):
+                self.main_window.menu_widgets['File']['Save'].setEnabled(state)
+                self.main_window.menu_widgets['File']['Render'].setEnabled(state)
+                
+            # Deactivate currently active scenario if any
             if active_key in self.main_window.scenario_views:
-                active_scenario_entry = self.main_window.scenario_views[active_key]
-                font = active_scenario_entry.title_label.font()
+                active_view = self.main_window.scenario_views[active_key]
+                font = active_view.title_label.font()
                 font.setBold(False)
-                active_scenario_entry.title_label.setFont(font)
+                active_view.title_label.setFont(font)
 
+            # Activate this one
             font = self.title_label.font()
             font.setBold(True)
             self.title_label.setFont(font)
 
             self.project.project_cache['active_scenario_entry'] = self.scenario_file.scenario_name
+
+            if is_closed and ((self.scenario_file.vars_table) or (self.scenario_file.vals_table) or (self.scenario_file.errors_table.data)):
+                self.tab_widget.setHidden(False)
+                self.project_cache["is_closed"] = False
+
             update_menu_bar(True)
 
     def on_title_label_left_clicked(self,ignore_footer=False):
         active_key = self.project.project_cache['active_scenario_entry']
         is_active = active_key == self.scenario_file.scenario_name
+        is_closed = self.project_cache['is_closed']
 
-        if not is_active:
-            self.on_frame_clicked()
-            return
+        if is_active:
 
-        if any([
-                bool(self.scenario_file.vars_table),
-                bool(self.scenario_file.vals_table),
-                bool(self.scenario_file.errors_table.data),
-            ]):
+            if is_closed: # CASE 1: not open & active → open
 
-            active_key = self.project.project_cache['active_scenario_entry']
-            is_active = (active_key == self.scenario_file.scenario_name)
-            is_closed = self.project_cache['is_closed']
+                if (self.scenario_file.vars_table) or (self.scenario_file.vals_table) or (self.scenario_file.errors_table.data):
+                    self.tab_widget.setHidden(False)
+                    self.project_cache["is_closed"] = False
+                elif not ignore_footer:
+                    CFooter.broadcast("Nothing to edit on {script}.".format(script=self.scenario_file.scenario_name), 1500)
 
-            if is_closed:
-                self.tab_widget.setHidden(False)
-                self.project_cache["is_closed"] = False
-            elif is_active:
+            elif not is_closed: # CASE 2: open & active → close
+
                 self.tab_widget.setHidden(True)
                 self.project_cache["is_closed"] = True
-            
-            self.on_frame_clicked()
-        elif not ignore_footer:
-            CFooter.broadcast("Nothing to edit on {script}.".format(script=self.scenario_file.scenario_name), 1500)
 
     def on_title_label_right_clicked(self):
         menu = QMenu(self.main_window)

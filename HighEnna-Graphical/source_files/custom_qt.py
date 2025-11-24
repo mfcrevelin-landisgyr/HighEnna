@@ -950,7 +950,8 @@ class CFrame(QFrame):
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.Type.MouseButtonPress:
-            self.click_debouncer.start(5)
+            if event.button() == Qt.MouseButton.LeftButton:
+                self.click_debouncer.start(5)
         return super().eventFilter(obj, event)
 
     def on_click_debouncer_timeout(self):

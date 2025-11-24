@@ -248,25 +248,26 @@ class MainWindow(QMainWindow):
         self.watch_debouncer.start(50)
 
     def on_watch_debouncer_timeout(self):
+        if self.project.is_open:
+            def on_scenario_changed():
+                if self.render_window:
+                    self.render_window.close()
+                    self.render_window = None
+                self.populate()
 
-        def on_scenario_changed():
-            if self.render_window:
-                self.render_window.close()
-                self.render_window = None
-            self.populate()
+            def on_module_changed():
+                if self.imports_window:
+                    self.imports_window.update()
 
-        def on_module_changed():
-            if self.imports_window:
-                self.imports_window.update()
 
-        worker = UpdateWorker(self)
+            worker = UpdateWorker(self)
 
-        worker.scenario_changed.connect(on_scenario_changed)
-        worker.module_changed.connect(on_module_changed)
+            worker.scenario_changed.connect(on_scenario_changed)
+            worker.module_changed.connect(on_module_changed)
 
-        worker.finished.connect(worker.deleteLater)
+            worker.finished.connect(worker.deleteLater)
 
-        worker.start()
+            worker.start()
 
 #--- Menu Bar Slots --- #
 
@@ -290,7 +291,7 @@ class MainWindow(QMainWindow):
         if new_path and os.path.isdir(new_path) and not os.path.abspath(new_path) == current_project_path:
             self.open_project(new_path)
 
-    def new_file_slot(self):
+    def new_file_slot(self,init_text=''):
         current_project_path = self.project.project_path
         if not current_project_path:
             CFooter.broadcast("There is no project open.", 1500)
@@ -302,6 +303,7 @@ class MainWindow(QMainWindow):
 
             if '.' not in name:
                 QMessageBox.warning(self, "Invalid Filename", "Filename must include an extension.")
+                self.new_file_slot(name)
                 return
 
             ext = name.rsplit('.', 1)[-1]
@@ -309,12 +311,14 @@ class MainWindow(QMainWindow):
             if f'.{ext}' not in self.application_cache['extensions']:
                 QMessageBox.warning(self, "Invalid Extension",
                     f"Extension '.{ext}' is not a valid scenario extension.\nUse Ctrl+Shift+E to manage valid extensions.")
+                self.new_file_slot(name)
                 return
 
             file_path = os.path.join(current_project_path, name)
 
             if os.path.exists(file_path):
                 QMessageBox.warning(self, "File Exists", f"The file '{name}' already exists.")
+                self.new_file_slot(name)
                 return
 
             try:
@@ -324,7 +328,7 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "File Creation Failed", f"Failed to create file: {str(e)}")
 
-        win = FileNameDialog(self)
+        win = FileNameDialog(self,init_text)
         win.nameAccepted.connect(after_accept)
         win.finished.connect(win.deleteLater)
         win.show()

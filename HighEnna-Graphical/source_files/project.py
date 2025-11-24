@@ -115,6 +115,9 @@ class Project:
         self.is_open = False
 
     def update(self):
+        if not self.is_open:
+            return (False,False)
+
         self.project_cache.disable_sync()
 
         scenario_changed = False
