@@ -7,6 +7,9 @@ import random
 import re
 import os
 
+def upper_camel_case(s):
+    return ''.join(word.capitalize() for word in re.split(r'[^\w]+', s))
+
 chars = [chr(ord('A')+i) for i in range(26)]+[chr(ord('0')+i) for i in range(10)]
 def UUID():
     part1 = ''.join(random.choice(chars) for _ in range(4))
@@ -27,7 +30,6 @@ class Project:
         self.scenario_files = {}
 
         self.is_open = False
-        self.directory_handle = None
 
     # ---- Slots ----
 
@@ -37,7 +39,14 @@ class Project:
                 return True
             self.close()
 
-        self.project_cache = Cacher(os.path.join(project_path,".project_cache"))
+        for file in os.listdir(project_path):
+            if file.endswith(".heproj"):
+                heproj_file = file
+                break
+        else:
+            project_cache_name = upper_camel_case(os.path.basename(project_path))
+            heproj_file = f"{project_cache_name}.heproj"
+        self.project_cache = Cacher(os.path.join(project_path,heproj_file))
 
         self.project_cache.setdefault('is_open',False)
         if self.project_cache['is_open']:

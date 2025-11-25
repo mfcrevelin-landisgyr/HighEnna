@@ -57,7 +57,7 @@ class UpdateWorker(QThread):
             self.module_changed.emit()
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self,init_path=None):
         super().__init__()
 
         self.setWindowTitle(APPLICATION_NAME)
@@ -151,10 +151,16 @@ class MainWindow(QMainWindow):
 
         self.init_ui()
 
-        current_project_path = self.application_cache['current_project_path']
+        current_project_path = init_path
+        project_opened = False
         if current_project_path and os.path.isdir(current_project_path):
-            if not self.open_project(current_project_path, open_ok=True):
-                self.application_cache['current_project_path'] = None
+            project_opened = self.open_project(current_project_path, open_ok=True)
+        if not project_opened:
+            current_project_path = self.application_cache['current_project_path']
+            if current_project_path and os.path.isdir(current_project_path):
+                project_opened = self.open_project(current_project_path, open_ok=True)
+        if not project_opened:
+            self.application_cache['current_project_path'] = None
 
         self.adjust_size()
 

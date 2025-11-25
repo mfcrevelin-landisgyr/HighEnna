@@ -1,7 +1,8 @@
 #define MyAppName "HighEnna"
 #define MyAppVersion "2.0.0"
-#define MyAppPublisher "Landis+Gyr, Inc."
 #define MyAppExeName "HighEnna.exe"
+#define MyAppPublisher "Landis+Gyr, Inc."
+#define MyAppAuthor "Mateus Felipe Crevelin"
 
 [Setup]
 AppId={{6236D968-C4F0-4EAC-A024-C82D34CC3219}
@@ -9,14 +10,16 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName}_{#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-DefaultDirName={autopf}\{#MyAppName}
+
+PrivilegesRequired=admin
+
+DefaultDirName={pf}\{#MyAppName}
+UsePreviousAppDir=no
+
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 DisableProgramGroupPage=yes
-; LicenseFile=..\LICENSE.txt
-; Uncomment the following line to run in non administrative install mode (install for current user only.)
-PrivilegesRequired=lowest
-PrivilegesRequiredOverridesAllowed=dialog
+
 OutputDir=..\output
 OutputBaseFilename={#MyAppName}_{#MyAppVersion}_windows_setup
 SetupIconFile=.\assets\Windows setup.ico
@@ -41,3 +44,8 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
+[Registry]
+Root: HKCR; Subkey: ".heproj"; ValueType: string; ValueData: "HighEnnaProject"; Flags: uninsdeletevalue
+Root: HKCR; Subkey: "HighEnnaProject"; ValueType: string; ValueData: "HighEnna Project"; Flags: uninsdeletekey
+Root: HKCR; Subkey: "HighEnnaProject\DefaultIcon"; ValueType: string; ValueData: "{app}\HighEnna.exe,0"
+Root: HKCR; Subkey: "HighEnnaProject\shell\open\command"; ValueType: string; ValueData: """{app}\HighEnna.exe"" ""%1"""
