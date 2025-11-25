@@ -17,9 +17,13 @@ file(GLOB SOURCES
 )
 
 # Python settings
-set(DPYTHON_INCLUDE_DIR "C:/Program Files/Python39/include")
-set(DPYTHON_LIBRARY_RELEASE "C:/Program Files/Python39/libs/python39.lib")
-set(DPYTHON_LIBRARY_DEBUG "C:/Program Files/Python39/libs/python39_d.lib")
+# set(DPYTHON_INCLUDE_DIR "C:/Program Files/Python39/include")
+# set(DPYTHON_LIBRARY_RELEASE "C:/Program Files/Python39/libs/python39.lib")
+# set(DPYTHON_LIBRARY_DEBUG "C:/Program Files/Python39/libs/python39_d.lib")
+find_package(Python3 COMPONENTS Development REQUIRED)
+message(STATUS "✅ Python include dir: ${Python3_INCLUDE_DIRS}")
+message(STATUS "✅ Python release lib: ${Python3_LIBRARY_RELEASE}")
+message(STATUS "✅ Python debug   lib: ${Python3_LIBRARY_DEBUG}")
 
 # pybind11
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/pybind11)
@@ -32,7 +36,8 @@ pybind11_add_module(${MODULE_NAME} ${SOURCES})
 # Include Python directories
 target_include_directories(${MODULE_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/source_files
-    ${DPYTHON_INCLUDE_DIR}
+    # ${DPYTHON_INCLUDE_DIR}
+    ${Python3_INCLUDE_DIRS}
 )
 
 # Compile definitions
@@ -42,8 +47,10 @@ target_compile_definitions(${MODULE_NAME} PRIVATE
 
 # Link Python libraries
 target_link_libraries(${MODULE_NAME} PRIVATE 
-    $<$<CONFIG:Release>:${DPYTHON_LIBRARY_RELEASE}>
-    $<$<CONFIG:Debug>:${DPYTHON_LIBRARY_DEBUG}>
+    # $<$<CONFIG:Release>:${DPYTHON_LIBRARY_RELEASE}>
+    # $<$<CONFIG:Debug>:${DPYTHON_LIBRARY_DEBUG}>
+    $<$<CONFIG:Release>:${Python3_LIBRARY_RELEASE}>
+    $<$<CONFIG:Debug>:${Python3_LIBRARY_DEBUG}>
 )
 
 # Link pybind11 libraries

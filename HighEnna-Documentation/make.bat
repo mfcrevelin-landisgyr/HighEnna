@@ -5,11 +5,11 @@ pushd %~dp0
 setlocal enabledelayedexpansion
 
 :: 1. Build HTML docs into local "build" folder
-set "SRC=source"
+set "SRC=source_files"
 set "OUT=build"
 for /f "delims=" %%R in ('python -c "import sys,os;from pathlib import Path;src=Path(r'!SRC!');out=Path(r'!OUT!');newest=lambda p:max([f.stat().st_mtime for f in p.rglob('*') if f.is_file()]) if p.exists() and any(p.rglob('*')) else None; print('True' if newest(src) and (not out.exists() or newest(src) > newest(out)) else 'False')"') do set "SHOLDRUN=%%R"
 if "!SHOLDRUN!"=="True" (
-	sphinx-build -b html source build
+	sphinx-build -b html source_files build
 )
 
 :: 2. Copy the HTML output to assets folder
