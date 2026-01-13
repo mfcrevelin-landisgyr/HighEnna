@@ -37,14 +37,14 @@ class ScenarioView:
     # ---- Slots ----
 
     def on_frame_clicked(self):
+        if not self.project or not self.project.project_cache:
+            return
+
         active_key = self.project.project_cache['active_scenario_entry']
         is_active = active_key == self.scenario_file.scenario_name
         is_closed = self.project_cache['is_closed']
 
         if not is_active:
-            def update_menu_bar(state):
-                self.main_window.menu_widgets['File']['Save'].setEnabled(state)
-                self.main_window.menu_widgets['File']['Render'].setEnabled(state)
                 
             # Deactivate currently active scenario if any
             if active_key in self.main_window.scenario_views:
@@ -64,7 +64,8 @@ class ScenarioView:
                 self.tab_widget.setHidden(False)
                 self.project_cache["is_closed"] = False
 
-            update_menu_bar(True)
+            self.main_window.menu_widgets['File']['Save'].setEnabled(True)
+            self.main_window.menu_widgets['File']['Render'].setEnabled(True)
 
     def on_title_label_left_clicked(self,ignore_footer=False):
         active_key = self.project.project_cache['active_scenario_entry']
@@ -87,16 +88,20 @@ class ScenarioView:
                 self.project_cache["is_closed"] = True
 
     def on_title_label_right_clicked(self):
+        active_key = self.project.project_cache['active_scenario_entry']
+        is_active = active_key == self.scenario_file.scenario_name
+
         menu = QMenu(self.main_window)
 
-        open_action = menu.addAction("Open" if self.project_cache["is_closed"] else "Close")
-        menu.addSeparator()
+        if is_active:
+            open_action = menu.addAction("Expand" if self.project_cache["is_closed"] else "Collapse")
+            menu.addSeparator()
         edit_action = menu.addAction("Code")
         render_action = menu.addAction("Render")
 
         action = menu.exec(self.main_window.cursor().pos())
 
-        if action == open_action:
+        if is_active and action == open_action:
             self.on_title_label_left_clicked()
 
         elif action == edit_action:

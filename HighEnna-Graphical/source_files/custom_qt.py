@@ -1,8 +1,8 @@
 from PyQt6.QtWidgets import (
-    QLabel, QScrollBar, QScrollArea, QTabBar, QTabWidget, QCheckBox, QWidget,
+    QLabel, QMenu, QScrollBar, QScrollArea, QTabBar, QTabWidget, QCheckBox, QWidget,
     QHBoxLayout, QTableWidget, QTableWidgetItem, QAbstractItemView, QHeaderView,
     QSizePolicy, QStyledItemDelegate, QTableView, QVBoxLayout, QFrame, QProgressBar,
-    QApplication, QDialog, QLineEdit
+    QApplication, QDialog, QLineEdit, QPushButton, QToolTip
 )
 from PyQt6.QtCore import (
     Qt, QTimer, QSize, QEvent, pyqtSignal, QVariant, QModelIndex, QAbstractTableModel,
@@ -942,10 +942,11 @@ class CFrame(QFrame):
 
     def recursive_install_event_filter(self):
         def _recursive_install_event_filter(widget):
-            widget.installEventFilter(self)
-            for child in widget.children():
-                if isinstance(child, QWidget):
-                    _recursive_install_event_filter(child)
+            if not(isinstance(widget, QPushButton) and widget.text() in ("Code", "Render")):
+                widget.installEventFilter(self)
+                for child in widget.children():
+                    if isinstance(child, QWidget):
+                        _recursive_install_event_filter(child)
         _recursive_install_event_filter(self)
 
     def eventFilter(self, obj, event):
@@ -956,3 +957,14 @@ class CFrame(QFrame):
 
     def on_click_debouncer_timeout(self):
         self.clicked.emit()
+
+class CMenu(QMenu):
+    def event(self, event):
+        if event.type() == QEvent.Type.ToolTip:
+            action = self.actionAt(event.pos())
+            if action:
+                QToolTip.showText(event.globalPos(), action.toolTip(), self)
+                return True
+        if event.type() == QEvent.Type.HoverMove:
+                QToolTip.hideText()
+        return super().event(event)

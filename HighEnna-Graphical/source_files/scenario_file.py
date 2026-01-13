@@ -79,12 +79,15 @@ class ScenarioFile:
                 le = self.result_parse['line_indexes'][line]-1
                 col = s - ls + 1
 
+                snipet = self.file_content[ls:le].replace(b'\t',b' ')
+                n = ls
+
                 try:
-                    line_prefix = ' '*len(self.file_content[ls:s].decode(encoding=self.encoding))
-                    line_middle = '^'*len(self.file_content[s:e].decode(encoding=self.encoding))
-                    line_postfix = ' '*len(self.file_content[e:le].decode(encoding=self.encoding))
+                    line_prefix = ' '*len(snipet[ls-n:s-n].decode(encoding=self.encoding))
+                    line_middle = '^'*len(snipet[s-n:e-n].decode(encoding=self.encoding))
+                    line_postfix = ' '*len(snipet[e-n:le-n].decode(encoding=self.encoding))
                     line_message = (
-                            self.file_content[ls:le].decode(encoding=self.encoding).replace(' ','°')
+                            snipet[ls-n:le-n].decode(encoding=self.encoding).replace(' ','°')
                             + '\n'
                             + line_prefix
                             + line_middle
@@ -93,11 +96,11 @@ class ScenarioFile:
                 except UnicodeDecodeError:
                     for e in range(e+1,le):
                         try:
-                            line_prefix = ' '*len(self.file_content[ls:s].decode(encoding=self.encoding))
-                            line_middle = '^'*len(self.file_content[s:e].decode(encoding=self.encoding))
-                            line_postfix = ' '*len(self.file_content[e:le].decode(encoding=self.encoding))
+                            line_prefix = ' '*len(snipet[ls-n:s-n].decode(encoding=self.encoding))
+                            line_middle = '^'*len(snipet[s-n:e-n].decode(encoding=self.encoding))
+                            line_postfix = ' '*len(snipet[e-n:le-n].decode(encoding=self.encoding))
                             line_message = (
-                                    self.file_content[ls:le].decode(encoding=self.encoding).replace(' ','°')
+                                    snipet[ls-n:le-n].decode(encoding=self.encoding).replace(' ','°')
                                     + '\n'
                                     + line_prefix
                                     + line_middle
@@ -108,7 +111,7 @@ class ScenarioFile:
                             pass
                     else:
                         try:
-                            line_message = self.file_content[ls:le].decode(encoding=self.encoding).replace(' ','°')
+                            line_message = snipet[ls-n:le-n].decode(encoding=self.encoding).replace(' ','°')
                         except UnicodeDecodeError:
                             line_message = ''
 

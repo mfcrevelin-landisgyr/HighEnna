@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QTimer, QFileSystemWatcher, QEvent, QThread, pyqtSignal
 from PyQt6.QtGui import QIcon, QKeySequence, QCursor, QKeyEvent, QAction
 
-from custom_qt import CScrollArea, CFooter, FileNameDialog
+from custom_qt import CScrollArea, CFooter, FileNameDialog, CMenu
 from project import *
 
 from imports_window import ImportsWindow
@@ -194,25 +194,29 @@ class MainWindow(QMainWindow):
         # Define menu structure
         self.menus = {
             "File": [
-                {"option": "Open Project Folder   ", "keybinding": "Ctrl+Shift+O", "slot": self.open_project_folder_slot},
                 {"option": "Open Project", "keybinding": "Ctrl+O", "slot": self.open_project_slot},
+                {"option": "Open Recent", "keybinding": None, "slot": CMenu("Open Recent", self)},
+                None,
+                {"option": "Open Project Folder   ", "keybinding": "Ctrl+P", "slot": self.open_project_folder_slot},
+                {"option": "Open Ouput Folder   ", "keybinding": "Ctrl+Shift+P", "slot": self.open_render_folder_slot},
+                None,
+                {"option": "New Scenario", "keybinding": "Ctrl+N", "slot": self.new_file_slot},
                 {"option": "New Module", "keybinding": "Ctrl+M", "slot": self.new_module_slot},
-                {"option": "New File", "keybinding": "Ctrl+N", "slot": self.new_file_slot},
                 None,
-                {"option": "Save All", "keybinding": "Ctrl+Shift+S", "slot": self.save_all_slot},
                 {"option": "Save", "keybinding": "Ctrl+S", "slot": self.save_slot},
+                {"option": "Save All", "keybinding": "Ctrl+Shift+S", "slot": self.save_all_slot},
                 None,
-                {"option": "Render All", "keybinding": "Ctrl+Shift+R", "slot": self.render_all_slot},
                 {"option": "Render", "keybinding": "Ctrl+R", "slot": self.render_slot},
+                {"option": "Render All", "keybinding": "Ctrl+Shift+R", "slot": self.render_all_slot},
                 None,
                 {"option": "Close Project", "keybinding": "Ctrl+W", "slot": self.close_project_slot},
                 {"option": "Exit", "keybinding": "Ctrl+Q", "slot": self.close},
             ],
             "Edit": [
-                {"option": "Imports", "keybinding": "Ctrl+I", "slot": self.imports_slot},
-                {"option": "Extentions", "keybinding": "Ctrl+Shift+E", "slot": self.extensions_slot},
+                {"option": "Module Assignments", "keybinding": "Ctrl+I", "slot": self.imports_slot},
+                {"option": "Extentions", "keybinding": "Ctrl+E", "slot": self.extensions_slot},
                 None,
-                {"option": "Render path", "keybinding": "Ctrl+E", "slot": self.render_path_slot},
+                {"option": "Render path", "keybinding": "Ctrl+Alt+R", "slot": self.render_path_slot},
             ],
             "View": [
                 {"option": "Colapse All", "keybinding": "Ctrl+Left", "slot": self.colapse_all_slot},
@@ -235,18 +239,24 @@ class MainWindow(QMainWindow):
                     menu.addSeparator()
                     continue
 
-                action = QAction(entry["option"], self)
-                self.menu_widgets[menu_name][entry["option"]] = action
+                if isinstance(entry["slot"],QMenu):
+                    menu.addMenu(entry["slot"])
+                    self.menu_widgets[menu_name][entry["option"]] = entry["slot"]
+                else:
+                    action = QAction(entry["option"], self)
+                    self.menu_widgets[menu_name][entry["option"]] = action
+                    if entry["keybinding"]:
+                        action.setShortcut(QKeySequence(entry["keybinding"]))
+                    if callable(entry["slot"]):
+                        action.triggered.connect(entry["slot"])
 
-                if entry["keybinding"]:
-                    action.setShortcut(QKeySequence(entry["keybinding"]))
-                if callable(entry["slot"]):
-                    action.triggered.connect(entry["slot"])
-                menu.addAction(action)
+                    menu.addAction(action)
             menu_bar.addMenu(menu)
 
         self.main_window.menu_widgets['File']['Save'].setEnabled(False)
         self.main_window.menu_widgets['File']['Render'].setEnabled(False)
+
+        self.populate_open_recent()
 
 #--- Slots --- #
 
@@ -280,22 +290,39 @@ class MainWindow(QMainWindow):
     def open_project_folder_slot(self):
         os.system(f'explorer "{self.application_cache["current_project_path"]}"')
 
-    def open_project_slot(self):
+    def open_render_folder_slot(self):
+        os.system(f'explorer "{self.project.project_cache["render_dir"]}"')
+
+    def open_project_slot(self,new_path=False):
         current_project_path = self.application_cache['current_project_path']
-        last_project_paths = self.application_cache['last_project_paths']
+        if not new_path:
+            last_project_paths = self.application_cache['last_project_paths']
 
-        last_project_paths = [p for p in last_project_paths if os.path.isdir(p)]
-        last_project_paths = list(dict.fromkeys(last_project_paths))[:10]
+            last_project_paths = [p for p in last_project_paths if os.path.isdir(p)]
+            last_project_paths = list(dict.fromkeys(last_project_paths))[:10]
 
-        self.application_cache['last_project_paths'] = last_project_paths
+            self.application_cache['last_project_paths'] = last_project_paths
+            self.populate_open_recent()
 
-        paths = [current_project_path] + last_project_paths
-        start_dir = next((os.path.dirname(path) for path in paths if path and os.path.isdir(path)),desktop_path)
+            paths = [current_project_path] + last_project_paths
+            start_dir = next((os.path.dirname(path) for path in paths if path and os.path.isdir(path)),desktop_path)
 
-        new_path = QFileDialog.getExistingDirectory(self,APPLICATION_NAME + " - Choose Project",directory=start_dir)
+            new_path = QFileDialog.getExistingDirectory(self,APPLICATION_NAME + " - Choose Project",directory=start_dir)
 
         if new_path and os.path.isdir(new_path) and not os.path.abspath(new_path) == current_project_path:
-            self.open_project(new_path)
+            if any(f.endswith(".heproj") for f in os.listdir(new_path)):
+                self.open_project(new_path)
+            else:
+                msg = QMessageBox(self)
+                msg.setWindowTitle("Not a project")
+                msg.setText(f"{new_path}\n\nThe folder you selected is not yet a project.\nMake it a project?")
+                msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+                msg.setIcon(QMessageBox.Icon.Question)
+                msg.setDefaultButton(QMessageBox.StandardButton.No)
+
+                if msg.exec() == QMessageBox.StandardButton.Yes:
+                    self.open_project(new_path)
+
 
     def new_file_slot(self,init_text=''):
         current_project_path = self.project.project_path
@@ -475,7 +502,7 @@ class MainWindow(QMainWindow):
             if output_dir_path and os.path.isdir(output_dir_path):
                 if os.path.normcase(os.path.abspath(output_dir_path)) == os.path.normcase(os.path.abspath(self.project.project_path)):
                     output_dir_path = os.path.join(self.project.project_path,'scripts')
-                self.project.project_cache['render_dir'] = output_dir_path
+                self.project.project_cache['render_dir'] = os.path.abspath(output_dir_path)
         else:
             CFooter.broadcast("No project open.", 1500)
 
@@ -513,19 +540,55 @@ class MainWindow(QMainWindow):
 
     def colapse_all_slot(self):
         self.project.project_cache['active_scenario_entry'] = None
+
+        self.main_window.menu_widgets['File']['Save'].setEnabled(False)
+        self.main_window.menu_widgets['File']['Render'].setEnabled(False)
+
         for scenario_view in self.scenario_views.values():
+            font = scenario_view.title_label.font()
+            font.setBold(False)
+            scenario_view.title_label.setFont(font)
+
             if not scenario_view.project_cache["is_closed"]:
-                scenario_view.on_title_label_left_clicked(True)
-            if not scenario_view.project_cache["is_closed"]:
-                scenario_view.on_title_label_left_clicked(True)
+                scenario_view.tab_widget.setHidden(True)
+                scenario_view.project_cache["is_closed"] = True
 
     def expand_all_slot(self):
         self.project.project_cache['active_scenario_entry'] = None
+
+        self.main_window.menu_widgets['File']['Save'].setEnabled(False)
+        self.main_window.menu_widgets['File']['Render'].setEnabled(False)
+
         for scenario_view in self.scenario_views.values():
-            if scenario_view.project_cache["is_closed"]:
-                scenario_view.on_title_label_left_clicked(True)
+            font = scenario_view.title_label.font()
+            font.setBold(False)
+            scenario_view.title_label.setFont(font)
+
+            if scenario_view.project_cache["is_closed"] and ((scenario_view.scenario_file.vars_table) or (scenario_view.scenario_file.vals_table) or (scenario_view.scenario_file.errors_table.data)):
+                scenario_view.tab_widget.setHidden(False)
+                scenario_view.project_cache["is_closed"] = False
 
 #--- Main Window Utils --- #
+
+    
+    def populate_open_recent(self):
+        submenu = self.menu_widgets["File"]["Open Recent"]
+        submenu.clear()
+
+        current_project_path = self.application_cache['current_project_path']
+
+        last_project_paths_clean = []
+        for last_project_path in self.application_cache['last_project_paths']:
+            if not last_project_path in last_project_paths_clean:
+                last_project_paths_clean.append(last_project_path)
+        last_project_paths = last_project_paths_clean[:10]
+        self.application_cache['last_project_paths'] = last_project_paths
+
+        for name, path in [(os.path.basename(p),p) for p in last_project_paths if p!=current_project_path and os.path.isdir(p)]:
+            action = QAction(name, self)
+            action.setToolTip(path)
+            action.triggered.connect(lambda _, p=path: self.open_project_slot(p))
+            submenu.addAction(action)
 
     def check_obsolete(self):
 
@@ -637,6 +700,7 @@ class MainWindow(QMainWindow):
         if op_result:
             self.application_cache['current_project_path'] = os.path.abspath(new_path)
             self.application_cache['last_project_paths'].insert(0, os.path.abspath(new_path))
+            self.populate_open_recent()
             self.main_window.menu_widgets['File']['Close Project'].setEnabled(True)
             self.setWindowTitle(APPLICATION_NAME + ' - (' + self.project.project_name + ')')
             self.project.project_cache['active_scenario_entry'] = None
