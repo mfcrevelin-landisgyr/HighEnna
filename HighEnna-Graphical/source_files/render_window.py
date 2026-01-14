@@ -1,20 +1,27 @@
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QTextEdit, QProgressBar, QApplication
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
+from PyQt6.QtCore import Qt, QThread, QMutex, QMutexLocker, pyqtSignal
 from PyQt6.QtGui import QCursor, QFont, QColor, QTextCharFormat, QTextCursor
 
 from custom_qt import CProgressBar
 
-class RenderWorker(QThread):
-    progress_signal = pyqtSignal(int)
-    result_signal = pyqtSignal(bool)
-    append_text_signal = pyqtSignal(str)
+import time
 
-    def __init__(self, parent, queue):
+class RenderWorker(QThread):
+    result_signal = pyqtSignal(bool)
+    
+    def __init__(self, parent,
+                work_queue,
+                enqueueu_message,
+                tick_progress
+            ):
         super().__init__(parent)
         self.parent = parent
-        self.queue = queue
+        self.work_queue = work_queue
+        self.enqueueu_message = enqueueu_message
+        self.tick_progress = tick_progress
+
         self._stop_requested = False
 
     def stop(self):
@@ -22,26 +29,45 @@ class RenderWorker(QThread):
 
     def run(self):
         all_ok = True
-        for file_name, items in self.queue.items():
+        for file_name, items in self.work_queue.items():
             if self._stop_requested:
                 break
             all_ok &= self.parent.project.scenario_files[file_name].render(
                     items,
-                    self.append_text_signal,
-                    self.progress_signal
+                    self.enqueueu_message,
+                    self.tick_progress
                 )
         self.result_signal.emit(all_ok)
+
+class PublishWorker(QThread):
+    publish_progress = pyqtSignal()
+
+    def __init__(self, parent,):
+        super().__init__(parent)
+        self.parent = parent
+        self._stop_requested = False
+        self.stale_time_ms = 10
+
+    def stop(self):
+        self._stop_requested = True
+
+    def run(self):
+        while not self._stop_requested:
+            self.publish_progress.emit()
+            self.msleep(self.stale_time_ms)
+        self.msleep(self.stale_time_ms)
+        self.publish_progress.emit()
 
 class RenderWindow(QDialog):
     closed = pyqtSignal()
 
-    def __init__(self, parent, queue):
+    def __init__(self, parent, work_queue):
         super().__init__(parent)
         self.parent = parent
 
-        self.queue = queue
-        self.total_steps = sum(len(items) for items in queue.values())
+        self.total_steps = sum(len(items) for items in work_queue.values())
         self.current_step = 0
+        self.message_buffer = []
 
         self.text_monitor = QTextEdit(self)
         self.text_monitor.setReadOnly(True)
@@ -71,24 +97,37 @@ class RenderWindow(QDialog):
         self.setWindowTitle("Rendering Monitor")
         self.adjust_size()
 
-        self.worker = RenderWorker(parent, queue)
-        self.worker.append_text_signal.connect(self.append_to_monitor)
-        self.worker.progress_signal.connect(self.update_progress)
-        self.worker.result_signal.connect(self.handle_completion)
-        self.worker.start()
+        self.worker_lock = QMutex()
 
-    def append_to_monitor(self,text):
-        text = "<pre style='font-family: Liberation Mono;'>{text}</pre>".format(text=text.replace('\n','<br>'))
-        self.text_monitor.insertHtml(text)
+        self.publisher = PublishWorker(parent)
+        self.publisher.publish_progress.connect(self.publish_progress)
+        self.renderer = RenderWorker(parent, work_queue, 
+                self.enqueueu_message,
+                self.tick_progress
+            )
+        self.renderer.result_signal.connect(self.handle_completion)
+        
+        self.publisher.start()
+        self.renderer.start()
 
-    def update_progress(self,n):
-        self.current_step += n
-        self.progress_bar.setValue(self.current_step)
-        self.parent.populate()
+    def enqueueu_message(self, text):
+        with QMutexLocker(self.worker_lock):
+            self.message_buffer.append(text)
 
+    def tick_progress(self, n):
+        with QMutexLocker(self.worker_lock):
+            self.current_step += n
+
+    def publish_progress(self):
+        with QMutexLocker(self.worker_lock):
+            text = "<pre style='font-family: Liberation Mono;'>{text}</pre>".format(text=(''.join(self.message_buffer)).replace('\n','<br>'))
+            self.text_monitor.insertHtml(text)
+            self.message_buffer.clear()
+            self.progress_bar.setValue(self.current_step)
 
     def handle_completion(self, all_ok: bool):
-        pass
+        self.publisher.stop()
+        self.parent.populate()
         # if all_ok:
             # QTimer.singleShot(750, self.close)
 
@@ -114,7 +153,7 @@ class RenderWindow(QDialog):
         self.setGeometry(new_x, new_y, new_width, new_height)
 
     def closeEvent(self, event):
-        self.worker.stop()
-        self.worker.wait(1000)
+        self.renderer.stop()
+        self.renderer.wait(1000)
         self.closed.emit()
         super().closeEvent(event)

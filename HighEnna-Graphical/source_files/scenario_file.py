@@ -206,7 +206,7 @@ class ScenarioFile:
 
 
 
-    def log_render_error(self,append_text_signal, exc, file_name, code='', indent='    | '):
+    def log_render_error(self,enqueueu_message, exc, file_name, code='', indent='    | '):
 
         chain = []
         current = exc
@@ -247,19 +247,19 @@ class ScenarioFile:
                     ])
 
         lines.append(f'{indent}\n')
-        append_text_signal.emit('\n'.join(lines))
+        enqueueu_message('\n'.join(lines))
 
-    def render(self,items, append_text_signal, progress_signal):
+    def render(self,items, enqueueu_message, tick_progress):
         if not items:
             return
         with QMutexLocker(self.mutex):
             script_ext = self.project.application_cache['extensions'][self.scenario_ext]
 
-            append_text_signal.emit(f'Scenario: <span style="color:#fff856;">{self.scenario_name}</span>\n')
+            enqueueu_message(f'Scenario: <span style="color:#fff856;">{self.scenario_name}</span>\n')
 
             if self.has_syntax_errors():
-                append_text_signal.emit('  <span style="color:#fd9d7d;">Contains Syntax errors. Quitting Scenario.</span>\n')
-                progress_signal.emit(len(items))
+                enqueueu_message('  <span style="color:#fd9d7d;">Contains Syntax errors. Quitting Scenario.</span>\n')
+                tick_progress(len(items))
                 return False
 
             self.errors_table.clear()
@@ -269,7 +269,7 @@ class ScenarioFile:
             if self.project.modules_path not in sys.path:
                 sys.path.append(self.project.modules_path)
 
-            append_text_signal.emit(f' *Importing <span style="color:#c695c6;">Modules</span>')
+            enqueueu_message(f' *Importing <span style="color:#c695c6;">Modules</span>')
             modules_scope = builtins_scope.copy()
             modules_ok = True
             if self.file_cache['modules']['module_assignment']:
@@ -289,11 +289,11 @@ class ScenarioFile:
                         modules_scope.update(module.__dict__)
                     except Exception as e:
                         if modules_ok:
-                            append_text_signal.emit('\n')
+                            enqueueu_message('\n')
                             modules_ok = False
 
-                        append_text_signal.emit(f'   *Importing <span style="color:#3d84fb;">{module_name}</span>\n')
-                        self.log_render_error(append_text_signal,e,module_name,module_content)
+                        enqueueu_message(f'   *Importing <span style="color:#3d84fb;">{module_name}</span>\n')
+                        self.log_render_error(enqueueu_message,e,module_name,module_content)
 
                         index = len(self.errors_table)
                         self.errors_table.insert_row([(index,)])
@@ -306,12 +306,12 @@ class ScenarioFile:
                         ])
 
                 if modules_ok:
-                    append_text_signal.emit(f': <span style="color:#67ff67;">Ok</span>\n')
+                    enqueueu_message(f': <span style="color:#67ff67;">Ok</span>\n')
             else:
-                append_text_signal.emit(f': <span style="color:#CCCCCC;">None</span>\n')
+                enqueueu_message(f': <span style="color:#CCCCCC;">None</span>\n')
 
 
-            append_text_signal.emit(f' *Setting <span style="color:#c695c6;">Vals</span>')
+            enqueueu_message(f' *Setting <span style="color:#c695c6;">Vals</span>')
             vals_scope = builtins_scope.copy()
             vals_ok = True
             if self.vals_table:
@@ -325,11 +325,11 @@ class ScenarioFile:
                         vals_scope.update(val_scope)
                     except Exception as e:
                         if vals_ok:
-                            append_text_signal.emit('\n')
+                            enqueueu_message('\n')
                             vals_ok = False
 
-                        append_text_signal.emit(f'   *Setting <span style="color:#3d84fb;">{val_name}</span>\n')
-                        self.log_render_error(append_text_signal,e,val_name,f'{val_name} = {val_value}')
+                        enqueueu_message(f'   *Setting <span style="color:#3d84fb;">{val_name}</span>\n')
+                        self.log_render_error(enqueueu_message,e,val_name,f'{val_name} = {val_value}')
 
                         index = len(self.errors_table)
                         self.errors_table.insert_row([(index,)])
@@ -341,9 +341,9 @@ class ScenarioFile:
                         ])
 
                 if vals_ok:
-                    append_text_signal.emit(f': <span style="color:#67ff67;">Ok</span>\n')
+                    enqueueu_message(f': <span style="color:#67ff67;">Ok</span>\n')
             else:
-                append_text_signal.emit(f': <span style="color:#CCCCCC;">None</span>\n')
+                enqueueu_message(f': <span style="color:#CCCCCC;">None</span>\n')
 
             partial_scope = {}
             partial_scope.update(modules_scope)
@@ -352,7 +352,7 @@ class ScenarioFile:
             vars_ok_ok = True
             if self.vars_table:
                 for script_index in items:
-                    append_text_signal.emit(
+                    enqueueu_message(
                             f'  Script: <span style="color:#fff856;">#{script_index+1}</span>\n'
                             f'   *Setting <span style="color:#c695c6;">Vars</span>'
                         )
@@ -368,12 +368,12 @@ class ScenarioFile:
                             vars_scope.update(var_scope)
                         except Exception as e:
                             if vars_ok:
-                                append_text_signal.emit('\n')
+                                enqueueu_message('\n')
                                 vars_ok = False
                                 vars_ok_ok = False
 
-                            append_text_signal.emit(f'     *Setting <span style="color:#3d84fb;">{var_name}</span>\n')
-                            self.log_render_error(append_text_signal,e,var_name,f'{var_name} = {var_value}',indent='      | ')
+                            enqueueu_message(f'     *Setting <span style="color:#3d84fb;">{var_name}</span>\n')
+                            self.log_render_error(enqueueu_message,e,var_name,f'{var_name} = {var_value}',indent='      | ')
 
                             tb = traceback.extract_tb(e.__traceback__)
                             frame = next(reversed([f for f in tb if f.filename == var_name]), None)
@@ -396,12 +396,12 @@ class ScenarioFile:
                         exec(code, vars_scope)
                     except Exception as e:
                         if vars_ok:
-                            append_text_signal.emit('\n')
+                            enqueueu_message('\n')
                             vars_ok = False
                             vars_ok_ok = False
 
-                        append_text_signal.emit(f'     *Setting <span style="color:#3d84fb;">script_name</span>\n')
-                        self.log_render_error(append_text_signal,e,'script_name',f'script_name = f\"{script_name}{script_ext}\"',indent='      | ')
+                        enqueueu_message(f'     *Setting <span style="color:#3d84fb;">script_name</span>\n')
+                        self.log_render_error(enqueueu_message,e,'script_name',f'script_name = f\"{script_name}{script_ext}\"',indent='      | ')
 
                         tb = traceback.extract_tb(e.__traceback__)
                         frame = next(reversed([f for f in tb if f.filename == 'script_name']), None)
@@ -416,26 +416,26 @@ class ScenarioFile:
                         ])
 
                     if vars_ok:
-                        append_text_signal.emit(f': <span style="color:#67ff67;">Ok</span>\n')
+                        enqueueu_message(f': <span style="color:#67ff67;">Ok</span>\n')
 
-                    append_text_signal.emit(f'   *Rendering')
+                    enqueueu_message(f'   *Rendering')
 
                     if not all([modules_ok,vals_ok,vars_ok]):
-                        append_text_signal.emit(f': <span style="color:#fd9d7d;">Errors occurred. Skipping <span style="color:#fff856;">#{script_index+1}</span>.</span>\n')
-                        progress_signal.emit(1)
+                        enqueueu_message(f': <span style="color:#fd9d7d;">Errors occurred. Skipping <span style="color:#fff856;">#{script_index+1}</span>.</span>\n')
+                        tick_progress(1)
                         continue
 
                     total_scope = {}
                     total_scope.update(partial_scope)
                     total_scope.update(vars_scope)
 
-                    self.render_tree(total_scope, append_text_signal)
+                    self.render_tree(total_scope, enqueueu_message)
 
-                    progress_signal.emit(1)
+                    tick_progress(1)
 
             else:
-                append_text_signal.emit(f'  Script: <span style="color:#fff856;">#Single</span>\n')
-                append_text_signal.emit(f'   *Setting <span style="color:#c695c6;">Vars</span>')
+                enqueueu_message(f'  Script: <span style="color:#fff856;">#Single</span>\n')
+                enqueueu_message(f'   *Setting <span style="color:#c695c6;">Vars</span>')
 
                 script_name = self.scripts_table.data[0][0]
                 vars_ok = True
@@ -447,12 +447,12 @@ class ScenarioFile:
                     partial_scope.update(var_scope)
                 except Exception as e:
                     if vars_ok:
-                        append_text_signal.emit('\n')
+                        enqueueu_message('\n')
                         vars_ok = False
                         vars_ok_ok = False
 
-                    append_text_signal.emit(f'     *Setting <span style="color:#3d84fb;">script_name</span>\n')
-                    self.log_render_error(append_text_signal,e,'script_name',f'script_name = f\"{script_name}{script_ext}\"',indent='      | ')
+                    enqueueu_message(f'     *Setting <span style="color:#3d84fb;">script_name</span>\n')
+                    self.log_render_error(enqueueu_message,e,'script_name',f'script_name = f\"{script_name}{script_ext}\"',indent='      | ')
 
                     tb = traceback.extract_tb(e.__traceback__)
                     frame = next(reversed([f for f in tb if f.filename == 'script_name']), None)
@@ -467,28 +467,28 @@ class ScenarioFile:
                     ])
 
                 if vars_ok:
-                    append_text_signal.emit(f': <span style="color:#CCCCCC;">None</span>\n')
+                    enqueueu_message(f': <span style="color:#CCCCCC;">None</span>\n')
 
-                append_text_signal.emit(f'   *Rendering')
+                enqueueu_message(f'   *Rendering')
                 
                 if not all([modules_ok,vals_ok,vars_ok]):
-                    append_text_signal.emit(f': <span style="color:#fd9d7d;">Errors occurred. Skipping.</span>\n')
-                    progress_signal.emit(1)
+                    enqueueu_message(f': <span style="color:#fd9d7d;">Errors occurred. Skipping.</span>\n')
+                    tick_progress(1)
                     return False
 
-                self.render_tree(partial_scope, append_text_signal)
+                self.render_tree(partial_scope, enqueueu_message)
 
-                progress_signal.emit(1)
+                tick_progress(1)
 
         return all([modules_ok,vals_ok,vars_ok_ok])
 
-    def render_tree(self, my_scope, append_text_signal):
+    def render_tree(self, my_scope, enqueueu_message):
 
         render_ok = True
 
         def _render_tree(f_bytes,tree,scope):
 
-            nonlocal append_text_signal
+            nonlocal enqueueu_message
             nonlocal render_ok
 
             for block in tree:
@@ -507,11 +507,11 @@ class ScenarioFile:
                         f_bytes.extend(expanded_expression.encode(encoding='utf-8'))
                     except Exception as e:
                         if render_ok:
-                            append_text_signal.emit(': <span style="color:#ff382f;">Failed</span>\n')
+                            enqueueu_message(': <span style="color:#ff382f;">Failed</span>\n')
                             render_ok = False
 
-                        append_text_signal.emit(f'     *Evaluating "<span style="color:#f9ae57;">$${expression}$$</span>" - row: {line_no+1}, col: {start}-{end}\n      |\n')
-                        self.log_render_error(append_text_signal,e,expression,indent='      | ')
+                        enqueueu_message(f'     *Evaluating "<span style="color:#f9ae57;">$${expression}$$</span>" - row: {line_no+1}, col: {start}-{end}\n      |\n')
+                        self.log_render_error(enqueueu_message,e,expression,indent='      | ')
 
                         index = len(self.errors_table)
                         self.errors_table.insert_row([(index,)])
@@ -532,11 +532,11 @@ class ScenarioFile:
                         exec(code, scope)
                     except Exception as e:
                         if render_ok:
-                            append_text_signal.emit(': <span style="color:#ff382f;">Failed</span>\n')
+                            enqueueu_message(': <span style="color:#ff382f;">Failed</span>\n')
                             render_ok = False
 
-                        append_text_signal.emit(f'     *Executing "<span style="color:#f9ae57;">$EXEC{{{argument}}}$</span>" - row: {line_no+1}, col: {start}-{end}\n      |\n')
-                        self.log_render_error(append_text_signal,e,argument,indent='      | ')
+                        enqueueu_message(f'     *Executing "<span style="color:#f9ae57;">$EXEC{{{argument}}}$</span>" - row: {line_no+1}, col: {start}-{end}\n      |\n')
+                        self.log_render_error(enqueueu_message,e,argument,indent='      | ')
 
                         index = len(self.errors_table)
                         self.errors_table.insert_row([(index,)])
@@ -577,11 +577,11 @@ for {argument}:
 
                     except Exception as e:
                         if render_ok:
-                            append_text_signal.emit(': <span style="color:#ff382f;">Failed</span>\n')
+                            enqueueu_message(': <span style="color:#ff382f;">Failed</span>\n')
                             render_ok = False
 
-                        append_text_signal.emit(f'     *Evaluating "<span style="color:#f9ae57;">$FOR{{{argument}}}$</span>" - row: {line_no+1}, col: {start}-{end}\n      |\n')
-                        self.log_render_error(append_text_signal,e,'FOR',code=code_str,indent='      | ')
+                        enqueueu_message(f'     *Evaluating "<span style="color:#f9ae57;">$FOR{{{argument}}}$</span>" - row: {line_no+1}, col: {start}-{end}\n      |\n')
+                        self.log_render_error(enqueueu_message,e,'FOR',code=code_str,indent='      | ')
 
                         index = len(self.errors_table)
                         self.errors_table.insert_row([(index,)])
@@ -618,11 +618,11 @@ if {argument}:
 
                             except Exception as e:
                                 if render_ok:
-                                    append_text_signal.emit(': <span style="color:#ff382f;">Failed</span>\n')
+                                    enqueueu_message(': <span style="color:#ff382f;">Failed</span>\n')
                                     render_ok = False
 
-                                append_text_signal.emit(f'     *Evaluating "<span style="color:#f9ae57;">$IF{{{argument}}}$</span>" - row: {line_no+1}, col: {start}-{end}\n      |\n')
-                                self.log_render_error(append_text_signal,e,'IF',code=code_str,indent='      | ')
+                                enqueueu_message(f'     *Evaluating "<span style="color:#f9ae57;">$IF{{{argument}}}$</span>" - row: {line_no+1}, col: {start}-{end}\n      |\n')
+                                self.log_render_error(enqueueu_message,e,'IF',code=code_str,indent='      | ')
 
                                 index = len(self.errors_table)
                                 self.errors_table.insert_row([(index,)])
@@ -643,7 +643,7 @@ if {argument}:
         if render_ok:
             os.makedirs(self.project.project_cache["render_dir"], exist_ok=True)
             result_bytes = re.sub(br"(?:(?<=\n)\n)?R'''\n+'''\n*",b'',result_bytes)
-            append_text_signal.emit(' <span style="color:#67ff67;">Success</span>\n')
+            enqueueu_message(' <span style="color:#67ff67;">Success</span>\n')
             safewrite('wb',os.path.join(self.project.project_cache["render_dir"],my_scope['script_name']),result_bytes)
         # import json
         # os.makedirs(self.project.project_cache["render_dir"], exist_ok=True)

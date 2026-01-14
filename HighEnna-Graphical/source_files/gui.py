@@ -154,11 +154,11 @@ class MainWindow(QMainWindow):
         current_project_path = init_path
         project_opened = False
         if current_project_path and os.path.isdir(current_project_path):
-            project_opened = self.open_project(current_project_path, open_ok=True)
+            project_opened = self.open_project(current_project_path, is_open_ok=True)
         if not project_opened:
             current_project_path = self.application_cache['current_project_path']
             if current_project_path and os.path.isdir(current_project_path):
-                project_opened = self.open_project(current_project_path, open_ok=True)
+                project_opened = self.open_project(current_project_path, is_open_ok=True)
         if not project_opened:
             self.application_cache['current_project_path'] = None
 
@@ -584,7 +584,7 @@ class MainWindow(QMainWindow):
         last_project_paths = last_project_paths_clean[:10]
         self.application_cache['last_project_paths'] = last_project_paths
 
-        for name, path in [(os.path.basename(p),p) for p in last_project_paths if p!=current_project_path and os.path.isdir(p)]:
+        for name, path in [(os.path.basename(p),p) for p in last_project_paths if ((not p==current_project_path) or (not self.project.is_open)) and os.path.isdir(p)]:
             action = QAction(name, self)
             action.setToolTip(path)
             action.triggered.connect(lambda _, p=path: self.open_project_slot(p))
@@ -694,8 +694,8 @@ class MainWindow(QMainWindow):
 
 #--- Main Window Methods --- #
 
-    def open_project(self,new_path,open_ok=False):
-        op_result = self.project.open(new_path)
+    def open_project(self,new_path,is_open_ok=False, force=False):
+        op_result = self.project.open(new_path, force=force)
 
         if op_result:
             self.application_cache['current_project_path'] = os.path.abspath(new_path)
@@ -706,15 +706,25 @@ class MainWindow(QMainWindow):
             self.project.project_cache['active_scenario_entry'] = None
             self.watcher.addPaths([new_path,self.project.modules_path])
             self.populate()
-        elif not open_ok:
+        elif not is_open_ok:
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Icon.Warning)
-            msg.setWindowTitle("Project already open")
+            msg.setWindowTitle("Project Already Open")
 
-            msg.setText("The project is already open in another window.\n\n")
-            msg.addButton("OK", QMessageBox.ButtonRole.AcceptRole)
+            msg.setText(
+                "This project is marked as already open in another HighEnna instance.\n\n"
+                "Opening the same project in multiple instances may lead to inconsistent or "
+                "corrupted state, data loss, or unexpected behavior.\n\n"
+                "Do you want to force the project to open anyway?"
+            )
 
-            QTimer.singleShot(50,msg.exec)
+            yes_button = msg.addButton("Yes", QMessageBox.ButtonRole.YesRole)
+            no_button = msg.addButton("No", QMessageBox.ButtonRole.NoRole)
+            msg.setDefaultButton(no_button)
+
+            msg.exec()
+            if msg.clickedButton() is yes_button:
+                return self.open_project(new_path, is_open_ok=True, force=True)
 
         return op_result
 

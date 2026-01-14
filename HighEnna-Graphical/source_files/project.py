@@ -33,7 +33,7 @@ class Project:
 
     # ---- Slots ----
 
-    def open(self, project_path):
+    def open(self, project_path, force=False):
         if self.is_open:
             if self.project_path == os.path.abspath(project_path):
                 return True
@@ -49,7 +49,7 @@ class Project:
         self.project_cache = Cacher(os.path.join(project_path,heproj_file))
 
         self.project_cache.setdefault('is_open',False)
-        if self.project_cache['is_open']:
+        if self.project_cache['is_open'] and not force:
             self.project_cache = None
             return False
             
