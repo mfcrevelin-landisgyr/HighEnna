@@ -112,13 +112,13 @@ class ScenarioView:
 
     def on_render_button_clicked(self,items=None):
         if not self.main_window.render_window:
-            def render_window_on_finished():
+            def render_window_on_closed():
                 self.main_window.render_window.deleteLater()
                 self.main_window.render_window = None
             if not items:
                 items = {self.scenario_file.scenario_name:list(range(len(self.scenario_file.scripts_table)))}
             self.main_window.render_window = RenderWindow(self.main_window,items)
-            self.main_window.render_window.finished.connect(render_window_on_finished)
+            self.main_window.render_window.closed.connect(render_window_on_closed)
             self.main_window.render_window.show()
         else:
             CFooter.broadcast("Rendering already in progress.", 2500)

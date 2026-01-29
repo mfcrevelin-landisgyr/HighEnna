@@ -1,0 +1,44 @@
+%YAML 1.2
+---
+scope: source.highenna
+version: 2
+
+contexts:
+  main:
+    - include: argdirectives
+    - include: directives
+    - include: placeholders
+
+  argdirectives:
+    - match: '(\$)(FOR|IF|ELIF|EXEC)(\{)'
+      captures:
+        1: punctuation.definition.directive.begin.highenna
+        2: keyword.control.highenna
+        3: punctuation.section.arguments.begin.highenna
+      push:
+        - meta_scope: meta.highenna.directive.with-args
+        - meta_content_scope: source.python
+        - match: '(\})(\$)'
+          captures:
+            1: punctuation.section.arguments.end.highenna
+            2: punctuation.definition.directive.end.highenna
+          pop: true
+
+  directives:
+    - match: '(\$)(END|ELSE)(\$)'
+      scope: meta.highenna.directive.no-args
+      captures:
+        1: punctuation.definition.directive.begin.highenna
+        2: keyword.control.highenna
+        3: punctuation.definition.directive.end.highenna
+
+  placeholders:
+    - match: '(\$\{)'
+      scope: punctuation.definition.placeholder.begin.highenna
+      push:
+        - meta_scope: meta.highenna.placeholder
+        - meta_content_scope: source.python
+        - match: '(\}\$)'
+          captures:
+            1: punctuation.definition.placeholder.end.highenna
+          pop: true

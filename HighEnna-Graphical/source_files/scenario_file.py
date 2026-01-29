@@ -135,7 +135,7 @@ class ScenarioFile:
             self.errors_table.set_cell(cells_to_set)
 
             if not is_update:
-                def reader():
+                def reader(file_path):
                     if self.cache_error:
                         return '{}'
                     stream = b''.join([self.file_content[start:end] for _,start,end in self.result_parse['cache']['lines']])
@@ -152,9 +152,9 @@ class ScenarioFile:
                     stream = highennabackend.encode(serialization.encode(encoding='utf-8'))
                     # stream = serialization.encode(encoding=self.encoding)
                     rewrite = self.file_content[:start]+\
-                        "R'''\n$$$\n".encode()+\
+                        "${{\n".encode()+\
                         b'\n'.join(stream[i:i+126] for i in range(0, len(stream), 126))+\
-                        "\n$$$\n'''\n".encode()+\
+                        "\n}}$\n".encode()+\
                         self.file_content[end:]
                     safewrite('wb',file_path,rewrite,encoding=self.encoding)
                     self.mod_time = os.path.getmtime(self.scenario_path)
@@ -165,9 +165,11 @@ class ScenarioFile:
                         writer=writer
                     )
 
+                self.file_cache['highenna_version'] = '2.2.0'
+
                 if self.result_parse['cache']['found']:
                     if 'highenna_version' in self.file_cache:
-                        if self.file_cache['highenna_version']=='2.0.0':
+                        if self.file_cache['highenna_version']>='2.0.0':
                             if 'table_data' in self.file_cache:
                                 self.scripts_table.column_names = self.file_cache['table_data']['scripts_table']['column_names'].copy()
                                 self.scripts_table.data = self.file_cache['table_data']['scripts_table']['data'].copy()
@@ -177,12 +179,12 @@ class ScenarioFile:
                                 self.vals_table.data = self.file_cache['table_data']['vals_table']['data'].copy()
                     else:
                         pass
-                else:
-                    self.file_content += b'\n\n'
-                    start,end = self.result_parse['cache']['location']
-                    self.result_parse['cache']['location'] = (start+2,end+2)
-
-                self.file_cache['highenna_version'] = '2.0.0'
+            
+            if not (self.result_parse['cache']['found']):
+                self.file_content += b'\n\n'
+                start,end = self.result_parse['cache']['location']
+                self.result_parse['cache']['location'] = (start+2,end+2)
+                self.file_cache.save()
 
             if not self.scripts_table.column_names:
                 self.scripts_table.column_names = ['Script Names']

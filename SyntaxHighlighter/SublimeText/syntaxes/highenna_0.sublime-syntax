@@ -1,0 +1,43 @@
+%YAML 1.2
+---
+scope: injection.highenna
+version: 2
+
+# This allows your syntax to 'inject' into Python
+# It looks for the 'main' context of Python and adds these rules to it
+extends: Packages/Python/Python.sublime-syntax
+
+contexts:
+  main:
+    - match: '(\$)(FOR|IF|ELIF|EXEC)(\{)'
+      scope: meta.highenna.directive.with-args
+      captures:
+        1: punctuation.definition.directive.begin.highenna
+        2: keyword.control.highenna
+        3: punctuation.section.arguments.begin.highenna
+      push:
+        - meta_scope: meta.highenna.directive.with-args
+        - meta_content_scope: source.python
+        - match: '(\})(\$)'
+          captures:
+            1: punctuation.section.arguments.end.highenna
+            2: punctuation.definition.directive.end.highenna
+          pop: true
+        - include: scope:source.python # Recursively include Python inside the braces
+
+    - match: '(\$)(END|ELSE)(\$)'
+      scope: meta.highenna.directive.no-args
+      captures:
+        1: punctuation.definition.directive.begin.highenna
+        2: keyword.control.highenna
+        3: punctuation.definition.directive.end.highenna
+
+    - match: '(\$\{)'
+      scope: punctuation.definition.placeholder.begin.highenna
+      push:
+        - meta_scope: meta.highenna.placeholder
+        - meta_content_scope: source.python
+        - match: '(\}\$)'
+          captures:
+            1: punctuation.definition.placeholder.end.highenna
+          pop: true

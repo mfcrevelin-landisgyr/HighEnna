@@ -1,5 +1,5 @@
 #define MyAppName "HighEnna"
-#define MyAppVersion "2.0.0"
+#define MyAppVersion "2.2.0"
 #define MyAppExeName "HighEnna.exe"
 #define MyAppPublisher "Landis+Gyr, Inc."
 #define MyAppAuthor "Mateus Felipe Crevelin"

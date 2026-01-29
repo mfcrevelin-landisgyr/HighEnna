@@ -7,7 +7,7 @@ from gui import *
 if __name__ == "__main__":
     init_path = None
     if len(sys.argv) > 2:
-        sys.exit()
+        sys.exit(0)
     elif len(sys.argv) > 1:
         arg = sys.argv[1]
         if not os.path.exists(arg): sys.exit()

@@ -1,0 +1,54 @@
+%YAML 1.2
+---
+name: "HighEnna"
+scope: source.highenna
+
+contexts:
+  main:
+    - include: argdirectives
+    - include: directives
+    - include: placeholders
+    - include: cache
+
+  argdirectives:
+    - match: '(\$)(\w+)(\{)'
+      scope: meta.highenna.directive.with-args
+      captures:
+        1: punctuation.definition.directive.begin.highenna
+        2: keyword.control.highenna
+        3: punctuation.definition.arguments.begin.highenna
+      embed: scope:source.python
+      embed_scope: meta.embedded.python
+      escape: '(\})(\$)'
+      escape_captures:
+        1: punctuation.definition.arguments.end.highenna
+        2: punctuation.definition.directive.end.highenna
+
+  directives:
+    - match: '(\$)(\w+)(\$)'
+      scope: meta.highenna.directive.no-args
+      captures:
+        1: punctuation.definition.directive.begin.highenna
+        2: keyword.control.highenna
+        3: punctuation.definition.directive.end.highenna
+
+  placeholders:
+    - match: '(\$\{(?!\{))'
+      captures:
+        0: punctuation.definition.placeholder.begin.highenna
+      embed: scope:source.python
+      embed_scope: meta.embedded.python
+      escape: '(\}\$)'
+      escape_captures:
+        1: punctuation.definition.placeholder.end.highenna
+
+  cache:
+    - match: '(\$\{\{)'
+      captures:
+        1: punctuation.definition.comment.cache.begin.highenna
+      push:
+        - meta_scope: comment.block.documentation.summary.cache.highenna
+        - match: '(\}\}\$)'
+          captures:
+            1: punctuation.definition.comment.cache.end.highenna
+          pop: true

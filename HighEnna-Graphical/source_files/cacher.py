@@ -23,9 +23,9 @@ class Cacher(dict):
         if reader:
             self.read = reader
         else:
-            def defaultReader():
-                if self.file_path and os.path.isfile(self.file_path):
-                    with open(self.file_path, 'r', encoding='utf-8') as f:
+            def defaultReader(file_path):
+                if file_path and os.path.isfile(file_path):
+                    with open(file_path, 'r', encoding='utf-8') as f:
                         data = f.read()
                     return data
                 return '{}'
@@ -42,7 +42,7 @@ class Cacher(dict):
             self.write = defaultWriter
 
 
-        data = self.wrap_item(json.loads(self.read(), object_hook=custom_decoder))
+        data = self.wrap_item(json.loads(self.read(self.file_path), object_hook=custom_decoder))
 
         super().__init__(data)
         self.__dict__.update(attributes)

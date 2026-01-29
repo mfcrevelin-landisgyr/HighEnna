@@ -1,10 +1,10 @@
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QTextEdit, QProgressBar, QApplication
+    QMainWindow, QVBoxLayout, QTextEdit, QProgressBar, QApplication, QWidget
 )
 from PyQt6.QtCore import Qt, QThread, QMutex, QMutexLocker, pyqtSignal
 from PyQt6.QtGui import QCursor, QFont, QColor, QTextCharFormat, QTextCursor
 
-from custom_qt import CProgressBar
+from custom_qt import CProgressBar, CTextEdit
 
 import time
 
@@ -46,7 +46,7 @@ class PublishWorker(QThread):
         super().__init__(parent)
         self.parent = parent
         self._stop_requested = False
-        self.stale_time_ms = 10
+        self.stale_time_ms = 100
 
     def stop(self):
         self._stop_requested = True
@@ -58,7 +58,7 @@ class PublishWorker(QThread):
         self.msleep(self.stale_time_ms)
         self.publish_progress.emit()
 
-class RenderWindow(QDialog):
+class RenderWindow(QMainWindow):
     closed = pyqtSignal()
 
     def __init__(self, parent, work_queue):
@@ -69,7 +69,7 @@ class RenderWindow(QDialog):
         self.current_step = 0
         self.message_buffer = []
 
-        self.text_monitor = QTextEdit(self)
+        self.text_monitor = CTextEdit(self)
         self.text_monitor.setReadOnly(True)
         self.text_monitor.setFontFamily("Liberation Mono")
         self.text_monitor.setTextInteractionFlags(
@@ -89,10 +89,11 @@ class RenderWindow(QDialog):
         self.progress_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.progress_bar.setFormat("%p%")
 
-        layout = QVBoxLayout()
+        central = QWidget(self)
+        layout = QVBoxLayout(central)
         layout.addWidget(self.text_monitor)
         layout.addWidget(self.progress_bar)
-        self.setLayout(layout)
+        self.setCentralWidget(central)
 
         self.setWindowTitle("Rendering Monitor")
         self.adjust_size()

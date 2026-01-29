@@ -1,0 +1,61 @@
+%YAML 1.2
+---
+name: "Plain Text"
+scope: text.plain.highenna
+
+contexts:
+  main:
+    - include: highenna-rules
+
+  highenna-rules:
+    - include: highenna-arg-directives
+    - include: highenna-directives
+    - include: highenna-cache
+    - include: highenna-interpolation
+
+  highenna-arg-directives:
+    - match: '(\$)(FOR|IF|ELIF|EXEC)(\{)'
+      scope: meta.highenna.directive.with-args
+      captures:
+        1: punctuation.definition.directive.begin.highenna
+        2: keyword.control.highenna
+        3: punctuation.definition.directive.body.begin.highenna
+      embed: Packages/Python/Python.sublime-syntax
+      embed_scope: meta.embedded.python.highenna
+      escape: '(\})(\$)'
+      escape_captures:
+        1: punctuation.definition.directive.body.end.highenna
+        2: punctuation.definition.directive.end.highenna
+
+  highenna-directives:
+    - match: '(\$)(END|ELSE)(\$)'
+      scope: meta.highenna.directive.no-args
+      captures:
+        1: punctuation.definition.directive.begin.highenna
+        2: keyword.control.highenna
+        3: punctuation.definition.directive.end.highenna
+
+  highenna-interpolation:
+    - match: '(\$)(\{)(?!\{)'
+      captures:
+        1: punctuation.definition.interpolation.begin.highenna
+        2: punctuation.definition.interpolation.body.begin.highenna
+      embed: Packages/Python/Python.sublime-syntax
+      embed_scope: meta.embedded.python.highenna
+      escape: '(\})(\$)'
+      escape_captures:
+        1: punctuation.definition.interpolation.body.end.highenna
+        2: punctuation.definition.interpolation.end.highenna
+
+  highenna-cache:
+    - match: '(\$)(\{\{)'
+      captures:
+        1: punctuation.definition.cache.begin.highenna
+        2: punctuation.definition.cache.body.begin.highenna
+      push:
+        - meta_scope: cache.block.highenna
+        - match: '(\}\})(\$)'
+          captures:
+            1: punctuation.definition.cache.body.end.highenna
+            2: punctuation.definition.cache.end.highenna
+          pop: true

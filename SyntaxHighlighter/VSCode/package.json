@@ -1,0 +1,20 @@
+{
+  "name": "highenna",
+  "displayName": "HighEnna",
+  "description": "HighEnna directive and placeholder highlighting",
+  "version": "0.0.1",
+  "publisher": "your-publisher-name",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "grammars": [
+      {
+        "scopeName": "injection.highenna",
+        "path": "./syntaxes/highenna.injection.tmLanguage.json",
+        "injectTo": ["source"]
+      }
+    ]
+  }
+}

@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import (
     QLabel, QMenu, QScrollBar, QScrollArea, QTabBar, QTabWidget, QCheckBox, QWidget,
     QHBoxLayout, QTableWidget, QTableWidgetItem, QAbstractItemView, QHeaderView,
     QSizePolicy, QStyledItemDelegate, QTableView, QVBoxLayout, QFrame, QProgressBar,
-    QApplication, QDialog, QLineEdit, QPushButton, QToolTip
+    QApplication, QDialog, QLineEdit, QPushButton, QToolTip, QTextEdit
 )
 from PyQt6.QtCore import (
     Qt, QTimer, QSize, QEvent, pyqtSignal, QVariant, QModelIndex, QAbstractTableModel,
@@ -968,3 +968,99 @@ class CMenu(QMenu):
         if event.type() == QEvent.Type.HoverMove:
                 QToolTip.hideText()
         return super().event(event)
+
+class CTextEdit(QTextEdit):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.setReadOnly(True)
+        self.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse |
+            Qt.TextInteractionFlag.TextSelectableByKeyboard
+        )
+        self.setCursorWidth(0)
+
+    def event(self, event):
+        if event.type() == QEvent.Type.HoverEnter:
+            self.grabMouse()
+        elif event.type() == QEvent.Type.HoverLeave:
+            self.releaseMouse()
+        return super().event(event)
+
+    def wheelEvent(self, event):
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier: # CTRL : change text size
+            delta = event.angleDelta().y()
+            if not delta:
+                event.ignore()
+                return
+
+            font = self.font()
+            size = font.pointSize()
+            if size <= 0:
+                event.ignore()
+                return
+
+            vbar = self.verticalScrollBar()
+            hbar = self.horizontalScrollBar()
+
+            # --- save relative scroll positions ---
+            def ratio(bar):
+                span = bar.maximum() - bar.minimum()
+                return 0 if span == 0 else (bar.value() - bar.minimum()) / span
+
+            v_ratio = ratio(vbar)
+            h_ratio = ratio(hbar)
+
+            # --- change font size ---
+            step = 1 if delta > 0 else -1
+            font.setPointSize(max(1, size + step))
+            self.setFont(font)
+
+            # --- restore scroll positions AFTER relayout ---
+            def restore():
+                def set_ratio(bar, r):
+                    span = bar.maximum() - bar.minimum()
+                    bar.setValue(bar.minimum() + int(r * span))
+
+                set_ratio(vbar, v_ratio)
+                set_ratio(hbar, h_ratio)
+
+            # defer until Qt finishes relayout
+            QTimer.singleShot(0, restore)
+
+            event.accept()
+        else: # SHIFT or None : scroll
+            delta_y = event.angleDelta().y()
+            delta_x = event.angleDelta().x()
+
+            if delta_x:
+                scrollbar = self.horizontalScrollBar()
+                delta = delta_x
+            elif event.modifiers() == Qt.KeyboardModifier.ShiftModifier:
+                scrollbar = self.horizontalScrollBar()
+                delta = delta_y
+            else:
+                scrollbar = self.verticalScrollBar()
+                delta = delta_y
+
+            if delta == 0:
+                event.ignore()
+                return
+
+            delta = -(delta // 120) * scrollbar.singleStep()
+            new_value = scrollbar.value() + delta
+
+            if new_value < scrollbar.minimum():
+                if scrollbar.value() != scrollbar.minimum():
+                    scrollbar.setValue(scrollbar.minimum())
+                    event.accept()
+                else:
+                    event.ignore()
+            elif new_value > scrollbar.maximum():
+                if scrollbar.value() != scrollbar.maximum():
+                    scrollbar.setValue(scrollbar.maximum())
+                    event.accept()
+                else:
+                    event.ignore()
+            else:
+                scrollbar.setValue(new_value)
+                event.accept()

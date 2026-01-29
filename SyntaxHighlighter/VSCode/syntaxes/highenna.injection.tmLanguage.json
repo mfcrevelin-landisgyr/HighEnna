@@ -1,0 +1,72 @@
+{
+  "scopeName": "injection.highenna",
+  "injectionSelector": "L:source",
+  "patterns": [
+    { "include": "#directiveWithArgs" },
+    { "include": "#directiveNoArgs" },
+    { "include": "#placeholder" }
+  ],
+  "repository": {
+    "directiveWithArgs": {
+      "patterns": [
+        {
+          "name": "meta.highenna.directive.with-args",
+          "begin": "(\\$)(FOR|IF|ELIF|EXEC)(\\{)",
+          "beginCaptures": {
+            "1": { "name": "punctuation.definition.directive.begin.highenna" },
+            "2": { "name": "keyword.control.highenna" },
+            "3": { "name": "punctuation.definition.arguments.begin.highenna" }
+          },
+          "end": "(\\})(\\$)",
+          "endCaptures": {
+            "1": { "name": "punctuation.definition.arguments.end.highenna" },
+            "2": { "name": "punctuation.definition.directive.end.highenna" }
+          },
+          "contentName": "source.python",
+          "patterns": [
+            {
+              "name": "source.python",
+              "include": "source.python"
+            }
+          ]
+        }
+      ]
+    },
+    "directiveNoArgs": {
+      "patterns": [
+        {
+          "name": "meta.highenna.directive.no-args",
+          "match": "(\\$)(END|ELSE)(\\$)",
+          "captures": {
+            "1": { "name": "punctuation.definition.directive.begin.highenna" },
+            "2": { "name": "keyword.control.highenna" },
+            "3": { "name": "punctuation.definition.directive.end.highenna" }
+          }
+        }
+      ]
+    },
+
+    "placeholder": {
+      "patterns": [
+        {
+          "name": "meta.highenna.placeholder",
+          "begin": "(\\$\\{)",
+          "beginCaptures": {
+            "1": { "name": "punctuation.definition.placeholder.begin.highenna" }
+          },
+          "end": "(\\}\\$)",
+          "endCaptures": {
+            "1": { "name": "punctuation.definition.placeholder.end.highenna" }
+          },
+          "contentName": "source.python",
+          "patterns": [
+            {
+              "name": "source.python",
+              "include": "source.python"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
